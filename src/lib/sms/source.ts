@@ -62,6 +62,16 @@ const ZONE_LAYOUT: Record<BodyZone["id"], { label: string; metrics: string[]; po
   legs: { label: "LEGS", metrics: ["Motion", "Load", "Fatigue"], position: [0.16, 0.5, 0.1] },
 };
 
+type HistoryKey =
+  | "heartRate"
+  | "bodyTemp"
+  | "spo2"
+  | "respiration"
+  | "stress"
+  | "hydration"
+  | "fatigue"
+  | "motion";
+
 interface MutableState {
   heartRate: number;
   bodyTemp: number;
@@ -75,7 +85,7 @@ interface MutableState {
   distance: number;
   calories: number;
   startedAt: number;
-  histories: Record<string, number[]>;
+  histories: Record<HistoryKey, number[]>;
   alerts: AlertItem[];
   trends: TrendSeries[];
 }
@@ -353,7 +363,7 @@ export function createMockTelemetrySource(intervalMs = 2000): TelemetrySource {
     state.histories.motion = pushHistory(state.histories.motion, state.motion);
 
     const label = new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
-    const map: Record<string, number> = {
+    const map: Record<string, number | undefined> = {
       heartRate: state.heartRate,
       coreTemp: state.bodyTemp,
       spo2: state.spo2,
@@ -361,7 +371,7 @@ export function createMockTelemetrySource(intervalMs = 2000): TelemetrySource {
     };
     state.trends = state.trends.map((series) => ({
       ...series,
-      points: [...series.points, { t: label, v: Number(map[series.key].toFixed(1)) }].slice(-60),
+      points: [...series.points, { t: label, v: Number((map[series.key] ?? 0).toFixed(1)) }].slice(-60),
     }));
 
     // Alert engine — derived from thresholds, never hard-coded in the UI.
@@ -375,7 +385,7 @@ export function createMockTelemetrySource(intervalMs = 2000): TelemetrySource {
 
     for (const c of candidates) {
       const recent = state.alerts.find((a) => a.id.startsWith(c.key));
-      if (!recent || Date.now() - Number(recent.id.split("-")[1]) > 30_000) {
+      if (!recent || Date.now() - Number(recent.id.split("-")[1] ?? 0) > 30_000) {
         state.alerts = [
           { id: `${c.key}-${Date.now()}`, time: clock(0), severity: c.severity, message: c.message },
           ...state.alerts,
