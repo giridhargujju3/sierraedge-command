@@ -34,8 +34,8 @@ export function SensorRow({
   active,
 }: {
   sensor: SensorReading;
-  onSelect?: (key: SensorKey) => void;
-  active?: boolean;
+  onSelect?: ((key: SensorKey) => void) | undefined;
+  active?: boolean | undefined;
 }) {
   const Icon = SENSOR_ICONS[sensor.key] ?? Activity;
   return (
@@ -61,8 +61,8 @@ export function SensorDataPanel({
   onSelect,
   activeKey,
 }: {
-  onSelect?: (key: SensorKey) => void;
-  activeKey?: SensorKey | null;
+  onSelect?: ((key: SensorKey) => void) | undefined;
+  activeKey?: SensorKey | null | undefined;
 }) {
   const { sensors } = useTelemetry();
   return (
