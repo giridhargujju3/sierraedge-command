@@ -206,7 +206,7 @@ export default function HoloMannequin({
 }) {
   return (
     <Canvas
-      camera={{ position: [0, 1.25, 3.1], fov: 38 }}
+      camera={{ position: [0, 1.05, 4.6], fov: 34 }}
       dpr={[1, 2]}
       gl={{ antialias: true, alpha: true }}
       onPointerMissed={() => onSelectZone("" as BodyZoneId)}
