@@ -42,7 +42,7 @@ export function AlertsPanel({ max = 6 }: { max?: number }) {
             <div className="min-w-0 flex-1">
               <p className="truncate text-[0.78rem] text-foreground">{a.message}</p>
               <div className="flex items-center gap-2">
-                <span className="hud-micro">{a.time}</span>
+                <span className="hud-micro" suppressHydrationWarning>{a.time}</span>
                 <span className={cn("hud-micro", statusText[a.severity])}>{statusLabel[a.severity]}</span>
               </div>
             </div>
