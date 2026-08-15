@@ -28,9 +28,10 @@ export function TopBar() {
         >
           <Radio className="size-3.5" /> {label}
         </span>
-        <span className="hud-micro flex items-center gap-1.5">
+        <span className="hud-micro flex items-center gap-1.5" suppressHydrationWarning>
           <ShieldCheck className="size-3.5 text-primary" /> LAST SYNC {system.lastSync}
         </span>
+
       </div>
     </header>
   );
