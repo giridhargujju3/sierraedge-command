@@ -1,24 +1,55 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { SoldierOverview } from "@/components/sms/SoldierOverview";
+import { VitalSigns } from "@/components/sms/VitalSigns";
+import { LocationPanel } from "@/components/sms/LocationPanel";
+import { SystemStatus } from "@/components/sms/SystemStatus";
+import { MannequinStage } from "@/components/sms/MannequinStage";
+import { SensorDataPanel } from "@/components/sms/SensorDataPanel";
+import { MissionPanel } from "@/components/sms/MissionPanel";
+import { AlertsPanel } from "@/components/sms/AlertsPanel";
+import { EquipmentPanel } from "@/components/sms/EquipmentPanel";
+import { TrendsPanel } from "@/components/sms/TrendsPanel";
 
-// No head() here: the home route inherits title/description/og/twitter from
-// __root.tsx, and ships no og:image so serve-time hosting can inject the
-// project's social preview (explicit og:image or latest screenshot).
 export const Route = createFileRoute("/")({
-  component: Index,
+  head: () => ({
+    meta: [
+      { title: "SierraEdge SMS — Smart Mannequin Command Dashboard" },
+      {
+        name: "description",
+        content:
+          "Real-time SierraEdge Smart Mannequin System dashboard: holographic 3D digital twin, vitals, sensors, alerts and mission telemetry.",
+      },
+      { property: "og:title", content: "SierraEdge SMS — Smart Mannequin Command Dashboard" },
+      {
+        property: "og:description",
+        content: "Holographic 3D digital twin with live vitals, sensor zones, alerts and mission telemetry.",
+      },
+    ],
+  }),
+  component: Dashboard,
 });
 
-// IMPORTANT: Replace this placeholder. See ./README.md for routing conventions.
-function Index() {
+function Dashboard() {
   return (
-    <div
-      className="flex min-h-screen items-center justify-center"
-      style={{ backgroundColor: "#fcfbf8" }}
-    >
-      <img
-        data-lovable-blank-page-placeholder="REMOVE_THIS"
-        src="https://cdn.gpteng.co/blank-app-v1.svg"
-        alt="Your app will live here!"
-      />
+    <div className="grid gap-3 xl:grid-cols-[19rem_minmax(0,1fr)_20rem]">
+      <div className="space-y-3">
+        <SoldierOverview />
+        <VitalSigns />
+        <LocationPanel />
+        <SystemStatus />
+      </div>
+
+      <div className="flex min-h-[520px] flex-col gap-3">
+        <MannequinStage />
+      </div>
+
+      <div className="space-y-3">
+        <SensorDataPanel />
+        <MissionPanel />
+        <AlertsPanel />
+        <EquipmentPanel />
+        <TrendsPanel keys={["heartRate", "coreTemp"]} />
+      </div>
     </div>
   );
 }
