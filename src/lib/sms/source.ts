@@ -18,15 +18,27 @@ export interface TelemetrySource {
   subscribe(listener: (snapshot: TelemetrySnapshot) => void): () => void;
 }
 
+/**
+ * Deterministic seeded PRNG + fixed base epoch: the very first snapshot must be
+ * byte-identical on the server and on the client, otherwise SSR hydration
+ * mismatches. Live drift after mount uses real time and Math.random.
+ */
+const BASE_TIME = 1767225600000; // 2026-01-01T00:00:00Z
+let seed = 0x5ee1;
+const rnd = () => {
+  seed = (seed * 1664525 + 1013904223) % 4294967296;
+  return seed / 4294967296;
+};
+
 const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v));
 const drift = (v: number, amount: number, min: number, max: number) =>
   clamp(v + (Math.random() - 0.5) * amount, min, max);
 
 const seedHistory = (base: number, spread: number, n = 24) =>
-  Array.from({ length: n }, (_, i) => base + Math.sin(i / 2.4) * spread * 0.6 + (Math.random() - 0.5) * spread);
+  Array.from({ length: n }, (_, i) => base + Math.sin(i / 2.4) * spread * 0.6 + (rnd() - 0.5) * spread);
 
 const clock = (offsetSeconds = 0) => {
-  const d = new Date(Date.now() - offsetSeconds * 1000);
+  const d = new Date(BASE_TIME - offsetSeconds * 1000);
   return d.toLocaleTimeString("en-GB", { hour12: false });
 };
 
@@ -40,13 +52,13 @@ const worst = (list: Status[]): Status =>
   list.includes("crit") ? "crit" : list.includes("warn") ? "warn" : "ok";
 
 const trendPoints = (base: number, spread: number, n = 40) => {
-  const now = Date.now();
+  const now = BASE_TIME;
   return Array.from({ length: n }, (_, i) => ({
     t: new Date(now - (n - i) * 60_000).toLocaleTimeString("en-GB", {
       hour: "2-digit",
       minute: "2-digit",
     }),
-    v: Number((base + Math.sin(i / 3) * spread + (Math.random() - 0.5) * spread).toFixed(1)),
+    v: Number((base + Math.sin(i / 3) * spread + (rnd() - 0.5) * spread).toFixed(1)),
   }));
 };
 
@@ -104,6 +116,7 @@ function initialState(): MutableState {
     distance: 18.7,
     calories: 2450,
     startedAt: Date.now() - 4 * 3600_000 - 35 * 60_000,
+    seededAt: BASE_TIME,
     histories: {
       heartRate: seedHistory(72, 6),
       bodyTemp: seedHistory(36.7, 0.25),
