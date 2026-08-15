@@ -95,14 +95,15 @@ function SensorPoint({
         document.body.style.cursor = "auto";
       }}
     >
-      <mesh scale={active || hover ? 1.6 : 1}>
-        <sphereGeometry args={[0.035, 16, 16]} />
+      <mesh scale={active || hover ? 1.7 : 1}>
+        <sphereGeometry args={[0.022, 16, 16]} />
         <meshBasicMaterial color={color} transparent opacity={0.95} />
       </mesh>
       <mesh ref={ring} rotation={[-Math.PI / 2, 0, 0]}>
-        <ringGeometry args={[0.045, 0.055, 24]} />
+        <ringGeometry args={[0.03, 0.036, 24]} />
         <meshBasicMaterial color={color} transparent side={THREE.DoubleSide} />
       </mesh>
+
       <pointLight color={color} intensity={active ? 0.8 : 0.3} distance={0.6} />
     </group>
   );
