@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as LiveMonitorRouteImport } from './routes/live-monitor'
+import { Route as SensorAnalyticsRouteImport } from './routes/sensor-analytics'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -22,31 +23,40 @@ const LiveMonitorRoute = LiveMonitorRouteImport.update({
   path: '/live-monitor',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SensorAnalyticsRoute = SensorAnalyticsRouteImport.update({
+  id: '/sensor-analytics',
+  path: '/sensor-analytics',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/live-monitor': typeof LiveMonitorRoute
+  '/sensor-analytics': typeof SensorAnalyticsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/live-monitor': typeof LiveMonitorRoute
+  '/sensor-analytics': typeof SensorAnalyticsRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/live-monitor': typeof LiveMonitorRoute
+  '/sensor-analytics': typeof SensorAnalyticsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/live-monitor'
+  fullPaths: '/' | '/live-monitor' | '/sensor-analytics'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/live-monitor'
-  id: '__root__' | '/' | '/live-monitor'
+  to: '/' | '/live-monitor' | '/sensor-analytics'
+  id: '__root__' | '/' | '/live-monitor' | '/sensor-analytics'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   LiveMonitorRoute: typeof LiveMonitorRoute
+  SensorAnalyticsRoute: typeof SensorAnalyticsRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -65,12 +75,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LiveMonitorRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/sensor-analytics': {
+      id: '/sensor-analytics'
+      path: '/sensor-analytics'
+      fullPath: '/sensor-analytics'
+      preLoaderRoute: typeof SensorAnalyticsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   LiveMonitorRoute: LiveMonitorRoute,
+  SensorAnalyticsRoute: SensorAnalyticsRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
