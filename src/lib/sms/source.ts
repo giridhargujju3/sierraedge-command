@@ -37,6 +37,8 @@ const drift = (v: number, amount: number, min: number, max: number) =>
 const seedHistory = (base: number, spread: number, n = 24) =>
   Array.from({ length: n }, (_, i) => base + Math.sin(i / 2.4) * spread * 0.6 + (rnd() - 0.5) * spread);
 
+const liveClock = () => new Date().toLocaleTimeString("en-GB", { hour12: false });
+
 const clock = (offsetSeconds = 0) => {
   const d = new Date(BASE_TIME - offsetSeconds * 1000);
   return d.toLocaleTimeString("en-GB", { hour12: false });
@@ -100,6 +102,8 @@ interface MutableState {
   histories: Record<HistoryKey, number[]>;
   alerts: AlertItem[];
   trends: TrendSeries[];
+  /** Flips true after the first live tick so time-sensitive fields use real time. */
+  live: boolean;
 }
 
 function initialState(): MutableState {
@@ -115,8 +119,8 @@ function initialState(): MutableState {
     battery: 87,
     distance: 18.7,
     calories: 2450,
+    live: false,
     startedAt: Date.now() - 4 * 3600_000 - 35 * 60_000,
-    seededAt: BASE_TIME,
     histories: {
       heartRate: seedHistory(72, 6),
       bodyTemp: seedHistory(36.7, 0.25),
@@ -288,7 +292,7 @@ function buildSnapshot(s: MutableState): TelemetrySnapshot {
     };
   });
 
-  const elapsed = Date.now() - s.startedAt;
+  const elapsed = (s.live ? Date.now() : BASE_TIME) - (s.live ? s.startedAt : BASE_TIME - 4 * 3600_000 - 35 * 60_000);
   const hh = String(Math.floor(elapsed / 3600_000)).padStart(2, "0");
   const mm = String(Math.floor((elapsed % 3600_000) / 60_000)).padStart(2, "0");
   const ss = String(Math.floor((elapsed % 60_000) / 1000)).padStart(2, "0");
@@ -342,7 +346,7 @@ function buildSnapshot(s: MutableState): TelemetrySnapshot {
       sensorsTotal: 14,
       battery: Math.round(s.battery),
       network: "SECURE",
-      lastSync: clock(0),
+      lastSync: s.live ? liveClock() : clock(0),
     },
     trends: s.trends,
   };
@@ -354,6 +358,7 @@ export function createMockTelemetrySource(intervalMs = 2000): TelemetrySource {
   let timer: ReturnType<typeof setInterval> | null = null;
 
   const tick = () => {
+    state.live = true;
     state.heartRate = drift(state.heartRate, 5, 58, 118);
     state.bodyTemp = drift(state.bodyTemp, 0.14, 36.0, 38.2);
     state.spo2 = drift(state.spo2, 0.9, 92, 100);
@@ -400,7 +405,7 @@ export function createMockTelemetrySource(intervalMs = 2000): TelemetrySource {
       const recent = state.alerts.find((a) => a.id.startsWith(c.key));
       if (!recent || Date.now() - Number(recent.id.split("-")[1] ?? 0) > 30_000) {
         state.alerts = [
-          { id: `${c.key}-${Date.now()}`, time: clock(0), severity: c.severity, message: c.message },
+          { id: `${c.key}-${Date.now()}`, time: liveClock(), severity: c.severity, message: c.message },
           ...state.alerts,
         ].slice(0, 12);
       }
