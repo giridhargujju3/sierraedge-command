@@ -1,3 +1,4 @@
+import { ClientTime } from "./ClientTime";
 import { HudPanel, KeyValue, StatusDot } from "./HudPanel";
 import { useTelemetry } from "@/lib/sms/TelemetryProvider";
 
@@ -32,7 +33,7 @@ export function SystemStatus() {
         </div>
       </div>
       <KeyValue label="Network" value={system.network} tone="text-ok" />
-      <KeyValue label="Last Sync" value={system.lastSync} />
+      <KeyValue label="Last Sync" value={<ClientTime value={system.lastSync} />} />
     </HudPanel>
   );
 }

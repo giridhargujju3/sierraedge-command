@@ -37,7 +37,10 @@ export function KeyValue({ label, value, tone }: { label: string; value: ReactNo
   return (
     <div className="flex items-baseline justify-between gap-3 py-[3px]">
       <span className="text-[0.72rem] text-muted-foreground">{label}</span>
-      <span className={cn("font-mono text-[0.76rem] text-foreground", tone)}>{value}</span>
+      <span className={cn("font-mono text-[0.76rem] text-foreground", tone)} suppressHydrationWarning>
+        {value}
+      </span>
+
     </div>
   );
 }
