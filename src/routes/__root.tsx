@@ -11,6 +11,10 @@ import { useEffect, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
+import { TelemetryProvider } from "../lib/sms/TelemetryProvider";
+import { TopBar } from "../components/sms/TopBar";
+import { BottomNav } from "../components/sms/BottomNav";
+
 
 function NotFoundComponent() {
   return (
