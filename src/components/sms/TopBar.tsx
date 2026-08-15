@@ -1,4 +1,5 @@
 import { Radio, ShieldCheck } from "lucide-react";
+import { ClientTime } from "./ClientTime";
 import { StatusDot } from "./HudPanel";
 import { useTelemetry } from "@/lib/sms/TelemetryProvider";
 import { cn } from "@/lib/utils";
@@ -29,7 +30,7 @@ export function TopBar() {
           <Radio className="size-3.5" /> {label}
         </span>
         <span className="hud-micro flex items-center gap-1.5" suppressHydrationWarning>
-          <ShieldCheck className="size-3.5 text-primary" /> LAST SYNC {system.lastSync}
+          <ShieldCheck className="size-3.5 text-primary" /> LAST SYNC <ClientTime value={system.lastSync} />
         </span>
 
       </div>

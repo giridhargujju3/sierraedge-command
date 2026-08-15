@@ -1,3 +1,4 @@
+import { ClientTime } from "./ClientTime";
 import { HudPanel, KeyValue } from "./HudPanel";
 import { useTelemetry } from "@/lib/sms/TelemetryProvider";
 
@@ -34,7 +35,7 @@ export function MissionPanel() {
       <div className="flex items-center gap-3">
         <div className="min-w-0 flex-1">
           <KeyValue label="Mission" value={mission.name} />
-          <KeyValue label="Duration" value={mission.duration} />
+          <KeyValue label="Duration" value={<ClientTime value={mission.duration} />} />
           <KeyValue label="Distance Covered" value={`${mission.distanceKm} km`} />
           <KeyValue label="Energy Burned" value={`${mission.calories} kcal`} />
           <KeyValue label="Performance Score" value={`${mission.performance}%`} tone="text-ok" />
