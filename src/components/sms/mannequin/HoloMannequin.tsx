@@ -1,9 +1,11 @@
-import { useMemo, useRef, useState } from "react";
+import { Suspense, useMemo, useRef, useState } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
 import type { BodyZone, BodyZoneId, Status } from "@/lib/sms/types";
 import { statusHex } from "@/lib/sms/status";
+import { GlbBody } from "./GlbBody";
+
 
 const HUD = "#38c6f4";
 
