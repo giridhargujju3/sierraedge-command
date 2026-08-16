@@ -56,9 +56,9 @@ export function GlbBody({
       const holo = new THREE.MeshPhysicalMaterial({
         color: new THREE.Color(tint),
         emissive: new THREE.Color(tint),
-        emissiveIntensity: 0.9,
+        emissiveIntensity: 0.45,
         transparent: true,
-        opacity: 0.3,
+        opacity: 0.14,
         roughness: 0.1,
         metalness: 0,
         depthWrite: false,
@@ -77,7 +77,7 @@ export function GlbBody({
           color: new THREE.Color(tint),
           wireframe: true,
           transparent: true,
-          opacity: 0.08,
+          opacity: 0.05,
           depthWrite: false,
           blending: THREE.AdditiveBlending,
         }),
@@ -102,7 +102,7 @@ export function GlbBody({
   useFrame(({ clock }) => {
     if (!group.current) return;
     group.current.position.y = offset.y + Math.sin(clock.elapsedTime * 0.8) * 0.015;
-    const pulse = 0.7 + Math.sin(clock.elapsedTime * 1.6) * 0.18;
+    const pulse = 0.42 + Math.sin(clock.elapsedTime * 1.6) * 0.1;
     materials.forEach((m) => ((m as THREE.MeshPhysicalMaterial).emissiveIntensity = pulse));
   });
 
