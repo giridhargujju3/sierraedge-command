@@ -16,7 +16,7 @@ const COMMON_VERT = /* glsl */ `
   varying vec3 vPosL;
   uniform float uInflate;
   void main() {
-    vPosL = position;
+    vPosL = (modelMatrix * vec4(position, 1.0)).xyz;
     vec3 n = normalize(normalMatrix * normal);
     vNormalW = n;
     vec3 inflated = position + normal * uInflate;
