@@ -134,15 +134,7 @@ function Platform() {
   );
 }
 
-function Body({
-  zones,
-  selected,
-  onSelectZone,
-}: {
-  zones: BodyZone[];
-  selected: BodyZoneId | null;
-  onSelectZone: (id: BodyZoneId) => void;
-}) {
+function Body({ zones, selected }: { zones: BodyZone[]; selected: BodyZoneId | null }) {
   const group = useRef<THREE.Group>(null);
   const zoneStatus = useMemo(() => {
     const map = {} as Record<BodyZoneId, Status>;
@@ -183,16 +175,6 @@ function Body({
       <HoloPart args={[0.06, 0.28]} position={[0.085, 0.26, 0]} color={hl("legs")} />
       <HoloPart geometry="box" args={[0.1, 0.05, 0.2]} position={[-0.085, 0.04, 0.04]} color={hl("legs")} />
       <HoloPart geometry="box" args={[0.1, 0.05, 0.2]} position={[0.085, 0.04, 0.04]} color={hl("legs")} />
-
-      {zones.map((z) => (
-        <SensorPoint
-          key={z.id}
-          position={z.position}
-          status={z.status}
-          active={selected === z.id}
-          onClick={() => onSelectZone(z.id)}
-        />
-      ))}
     </group>
   );
 }
@@ -218,7 +200,7 @@ export default function HoloMannequin({
       <pointLight position={[-2, 1, -2]} intensity={8} color="#1e6fff" />
 
       {/* Uploaded digital-twin model, with the procedural body as fallback while it streams in. */}
-      <Suspense fallback={<Body zones={zones} selected={selected} onSelectZone={onSelectZone} />}>
+      <Suspense fallback={<Body zones={zones} selected={selected} />}>
         <GlbBody zones={zones} selected={selected} />
       </Suspense>
 
