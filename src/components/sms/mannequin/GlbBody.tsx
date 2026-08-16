@@ -49,7 +49,7 @@ export function GlbBody({
     const meshes: THREE.Mesh[] = [];
     model.traverse((child) => {
       const mesh = child as THREE.Mesh;
-      if (mesh.isMesh && !mesh.userData.holoWire) meshes.push(mesh);
+      if (mesh.isMesh && !mesh.userData['holoWire']) meshes.push(mesh);
     });
 
     meshes.forEach((mesh) => {
@@ -82,7 +82,7 @@ export function GlbBody({
           blending: THREE.AdditiveBlending,
         }),
       );
-      wire.userData.holoWire = true;
+      wire.userData['holoWire'] = true;
       wire.scale.setScalar(1.002);
       mesh.add(wire);
     });
