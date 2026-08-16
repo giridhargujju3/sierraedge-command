@@ -12,7 +12,7 @@ const ITEMS = [
 
 export function BottomNav() {
   return (
-    <nav className="hud-panel sticky bottom-2 z-30 mx-2 mt-3 flex items-center justify-between gap-1 overflow-x-auto px-2 py-1.5 scroll-thin">
+    <nav className="hud-panel z-30 mx-2 mb-2 shrink-0 flex items-center justify-between gap-1 overflow-x-auto px-2 py-1.5 scroll-thin">
       {ITEMS.map(({ to, label, icon: Icon }) => (
         <Link
           key={to}
