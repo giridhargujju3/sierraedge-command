@@ -73,6 +73,8 @@ export function GlbBody({
 
       // Layer 2 — slightly inflated back-facing aura shell.
       const aura = createAuraMaterial();
+      // inflate is in local units; convert so the shell sits ~2 cm outside the body.
+      aura.uniforms['uInflate']!.value = 0.02 / scale;
       const auraMesh = new THREE.Mesh(mesh.geometry, aura);
       auraMesh.userData['holoLayer'] = true;
       auraMesh.renderOrder = 1;
@@ -90,7 +92,7 @@ export function GlbBody({
     });
 
     return { bodyMats, auraMats, wireMats };
-  }, [model, quality]);
+  }, [model, quality, scale]);
 
   // Dispose generated materials on unmount.
   useEffect(
