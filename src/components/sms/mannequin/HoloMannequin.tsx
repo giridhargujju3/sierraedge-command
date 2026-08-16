@@ -214,7 +214,22 @@ export default function HoloMannequin({
       <ambientLight intensity={0.6} />
       <pointLight position={[2, 3, 3]} intensity={12} color={HUD} />
       <pointLight position={[-2, 1, -2]} intensity={8} color="#1e6fff" />
-      <Body zones={zones} selected={selected} onSelectZone={onSelectZone} />
+
+      {/* Uploaded digital-twin model, with the procedural body as fallback while it streams in. */}
+      <Suspense fallback={<Body zones={zones} selected={selected} onSelectZone={onSelectZone} />}>
+        <GlbBody zones={zones} selected={selected} />
+      </Suspense>
+
+      {zones.map((z) => (
+        <SensorPoint
+          key={z.id}
+          position={z.position}
+          status={z.status}
+          active={selected === z.id}
+          onClick={() => onSelectZone(z.id)}
+        />
+      ))}
+
       <Platform />
       <OrbitControls
         enablePan={false}
@@ -228,3 +243,4 @@ export default function HoloMannequin({
     </Canvas>
   );
 }
+
