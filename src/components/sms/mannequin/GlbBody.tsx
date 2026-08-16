@@ -51,17 +51,30 @@ export function GlbBody({
       const holo = new THREE.MeshPhysicalMaterial({
         color: new THREE.Color(tint),
         emissive: new THREE.Color(tint),
-        emissiveIntensity: 0.85,
+        emissiveIntensity: 0.9,
         transparent: true,
-        opacity: 0.34,
-        roughness: 0.15,
-        metalness: 0.05,
-        transmission: 0.35,
-        thickness: 0.6,
+        opacity: 0.3,
+        roughness: 0.1,
+        metalness: 0,
         depthWrite: false,
+        blending: THREE.AdditiveBlending,
         side: THREE.DoubleSide,
       });
       mesh.material = holo;
+      // Wireframe shell gives the scan-grid digital-twin read.
+      const wire = new THREE.Mesh(
+        mesh.geometry,
+        new THREE.MeshBasicMaterial({
+          color: new THREE.Color(tint),
+          wireframe: true,
+          transparent: true,
+          opacity: 0.08,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending,
+        }),
+      );
+      wire.scale.setScalar(1.002);
+      mesh.add(wire);
       mesh.castShadow = false;
       mesh.receiveShadow = false;
       list.push(holo);
