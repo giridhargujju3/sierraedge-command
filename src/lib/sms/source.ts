@@ -71,7 +71,7 @@ const ZONE_LAYOUT: Record<BodyZone["id"], { label: string; metrics: string[]; po
     metrics: ["Heart Rate", "Respiration", "Posture"],
     position: [0.0, 1.36, 0.15],
   },
-  arms: { label: "ARMS", metrics: ["Motion", "Temperature"], position: [-0.56, 1.04, 0.04] },
+  arms: { label: "ARMS", metrics: ["Motion", "Temperature"], position: [-0.46, 1.02, 0.05] },
   core: { label: "CORE", metrics: ["Core Temp", "SpO2", "Hydration"], position: [0, 1.05, 0.16] },
   legs: { label: "LEGS", metrics: ["Motion", "Load", "Fatigue"], position: [0.13, 0.52, 0.1] },
 };
