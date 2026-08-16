@@ -45,9 +45,14 @@ export function GlbBody({
   // Replace every material with a holographic shell so the model reads as a digital twin.
   const materials = useMemo(() => {
     const list: THREE.Material[] = [];
+    // Collect first: adding children during traverse() would recurse forever.
+    const meshes: THREE.Mesh[] = [];
     model.traverse((child) => {
       const mesh = child as THREE.Mesh;
-      if (!mesh.isMesh) return;
+      if (mesh.isMesh && !mesh.userData.holoWire) meshes.push(mesh);
+    });
+
+    meshes.forEach((mesh) => {
       const holo = new THREE.MeshPhysicalMaterial({
         color: new THREE.Color(tint),
         emissive: new THREE.Color(tint),
@@ -61,6 +66,10 @@ export function GlbBody({
         side: THREE.DoubleSide,
       });
       mesh.material = holo;
+      mesh.castShadow = false;
+      mesh.receiveShadow = false;
+      list.push(holo);
+
       // Wireframe shell gives the scan-grid digital-twin read.
       const wire = new THREE.Mesh(
         mesh.geometry,
@@ -73,15 +82,13 @@ export function GlbBody({
           blending: THREE.AdditiveBlending,
         }),
       );
+      wire.userData.holoWire = true;
       wire.scale.setScalar(1.002);
       mesh.add(wire);
-      mesh.castShadow = false;
-      mesh.receiveShadow = false;
-      list.push(holo);
-      return;
     });
     return list;
   }, [model, tint]);
+
 
   useEffect(() => {
     const color = new THREE.Color(selected ? "#ffffff" : tint);
