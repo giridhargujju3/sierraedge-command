@@ -5,17 +5,23 @@ import * as THREE from "three";
 import type { BodyZone, BodyZoneId, Status } from "@/lib/sms/types";
 import { statusHex } from "@/lib/sms/status";
 import modelAsset from "@/assets/sierraedge-mannequin.glb.asset.json";
+import { ZONE_BANDS, createAuraMaterial, createBodyMaterial, createWireMaterial } from "./holoMaterial";
 
-const HUD = "#38c6f4";
+const HUD = "#4fd8ff";
 /** Target height in metres so uploaded models line up with the sensor anchors. */
 const TARGET_HEIGHT = 1.75;
+const SCAN_PERIOD = 7; // seconds top -> bottom
 
 export function GlbBody({
   zones,
   selected,
+  quality = "high",
+  onScan,
 }: {
   zones: BodyZone[];
   selected: BodyZoneId | null;
+  quality?: "high" | "low";
+  onScan?: (y: number) => void;
 }) {
   const { scene } = useGLTF(modelAsset.url);
   const group = useRef<THREE.Group>(null);
@@ -26,6 +32,8 @@ export function GlbBody({
       ? "warn"
       : "ok";
   const tint = worst === "ok" ? HUD : statusHex[worst];
+  const selectedStatus = zones.find((z) => z.id === selected)?.status ?? "ok";
+  const highlightHex = selected ? (selectedStatus === "ok" ? "#c9f7ff" : statusHex[selectedStatus]) : "#ffffff";
 
   const { model, scale, offset } = useMemo(() => {
     const clone = scene.clone(true);
@@ -42,68 +50,90 @@ export function GlbBody({
     };
   }, [scene]);
 
-  // Replace every material with a holographic shell so the model reads as a digital twin.
-  const materials = useMemo(() => {
-    const list: THREE.Material[] = [];
+  /** Build the three holographic layers: aura shell, fresnel body, wireframe. */
+  const { bodyMats, auraMats, wireMats } = useMemo(() => {
+    const bodyMats: THREE.ShaderMaterial[] = [];
+    const auraMats: THREE.ShaderMaterial[] = [];
+    const wireMats: THREE.MeshBasicMaterial[] = [];
+
     // Collect first: adding children during traverse() would recurse forever.
     const meshes: THREE.Mesh[] = [];
     model.traverse((child) => {
       const mesh = child as THREE.Mesh;
-      if (mesh.isMesh && !mesh.userData['holoWire']) meshes.push(mesh);
+      if (mesh.isMesh && !mesh.userData['holoLayer']) meshes.push(mesh);
     });
 
     meshes.forEach((mesh) => {
-      const holo = new THREE.MeshPhysicalMaterial({
-        color: new THREE.Color(tint),
-        emissive: new THREE.Color(tint),
-        emissiveIntensity: 0.45,
-        transparent: true,
-        opacity: 0.14,
-        roughness: 0.1,
-        metalness: 0,
-        depthWrite: false,
-        blending: THREE.AdditiveBlending,
-        side: THREE.DoubleSide,
-      });
-      mesh.material = holo;
+      const body = createBodyMaterial();
+      mesh.material = body;
       mesh.castShadow = false;
       mesh.receiveShadow = false;
-      list.push(holo);
+      mesh.renderOrder = 2;
+      bodyMats.push(body);
 
-      // Wireframe shell gives the scan-grid digital-twin read.
-      const wire = new THREE.Mesh(
-        mesh.geometry,
-        new THREE.MeshBasicMaterial({
-          color: new THREE.Color(tint),
-          wireframe: true,
-          transparent: true,
-          opacity: 0.05,
-          depthWrite: false,
-          blending: THREE.AdditiveBlending,
-        }),
-      );
-      wire.userData['holoWire'] = true;
-      wire.scale.setScalar(1.002);
-      mesh.add(wire);
+      // Layer 2 — slightly inflated back-facing aura shell.
+      const aura = createAuraMaterial();
+      const auraMesh = new THREE.Mesh(mesh.geometry, aura);
+      auraMesh.userData['holoLayer'] = true;
+      auraMesh.renderOrder = 1;
+      mesh.add(auraMesh);
+      auraMats.push(aura);
+
+      if (quality === "high") {
+        const wire = new THREE.Mesh(mesh.geometry, createWireMaterial());
+        wire.userData['holoLayer'] = true;
+        wire.scale.setScalar(1.002);
+        wire.renderOrder = 3;
+        mesh.add(wire);
+        wireMats.push(wire.material as THREE.MeshBasicMaterial);
+      }
     });
-    return list;
-  }, [model, tint]);
 
+    return { bodyMats, auraMats, wireMats };
+  }, [model, quality]);
 
+  // Dispose generated materials on unmount.
+  useEffect(
+    () => () => {
+      [...bodyMats, ...auraMats, ...wireMats].forEach((m) => m.dispose());
+    },
+    [bodyMats, auraMats, wireMats],
+  );
+
+  // Colour + highlight state (no per-frame allocation).
   useEffect(() => {
-    const color = new THREE.Color(selected ? "#ffffff" : tint);
-    materials.forEach((m) => {
-      const mat = m as THREE.MeshPhysicalMaterial;
-      mat.color.copy(color);
-      mat.emissive.copy(new THREE.Color(tint));
+    const edge = new THREE.Color(tint);
+    const hi = new THREE.Color(highlightHex);
+    const band = selected ? ZONE_BANDS[selected] : null;
+    bodyMats.forEach((m) => {
+      m.uniforms['uEdge']!.value.copy(edge);
+      m.uniforms['uHighlight']!.value.copy(hi);
+      m.uniforms['uBandMin']!.value = band ? band[0] : 99;
+      m.uniforms['uBandMax']!.value = band ? band[1] : 99;
+      m.uniforms['uHighlightAmt']!.value = band ? 1 : 0;
+      m.uniforms['uDim']!.value = selected ? 0.45 : 0;
     });
-  }, [materials, tint, selected]);
+    auraMats.forEach((m) => m.uniforms['uEdge']!.value.copy(edge));
+    wireMats.forEach((m) => m.color.copy(edge));
+  }, [bodyMats, auraMats, wireMats, tint, highlightHex, selected]);
 
   useFrame(({ clock }) => {
-    if (!group.current) return;
-    group.current.position.y = offset.y + Math.sin(clock.elapsedTime * 0.8) * 0.015;
-    const pulse = 0.42 + Math.sin(clock.elapsedTime * 1.6) * 0.1;
-    materials.forEach((m) => ((m as THREE.MeshPhysicalMaterial).emissiveIntensity = pulse));
+    const t = clock.elapsedTime;
+    if (group.current) group.current.position.y = offset.y + Math.sin(t * 0.8) * 0.015;
+
+    const scanY = TARGET_HEIGHT * (1 - ((t % SCAN_PERIOD) / SCAN_PERIOD)) + 0.02;
+    onScan?.(scanY);
+
+    for (let i = 0; i < bodyMats.length; i++) {
+      const u = bodyMats[i]!.uniforms;
+      u['uTime']!.value = t;
+      u['uScanY']!.value = scanY;
+      u['uOpacity']!.value = 0.5 + Math.sin(t * 1.5) * 0.04;
+    }
+    for (let i = 0; i < auraMats.length; i++) auraMats[i]!.uniforms['uTime']!.value = t;
+    for (let i = 0; i < wireMats.length; i++) {
+      wireMats[i]!.opacity = 0.045 + Math.sin(t * 1.1 + i) * 0.015;
+    }
   });
 
   return (
