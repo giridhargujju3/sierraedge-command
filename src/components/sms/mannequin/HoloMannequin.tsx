@@ -1,10 +1,10 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { OrbitControls } from "@react-three/drei";
+import { Html, OrbitControls } from "@react-three/drei";
 import { Bloom, EffectComposer } from "@react-three/postprocessing";
 import * as THREE from "three";
-import type { BodyZone, BodyZoneId, Status } from "@/lib/sms/types";
-import { statusHex } from "@/lib/sms/status";
+import type { BodyZone, BodyZoneId, SensorReading, Status } from "@/lib/sms/types";
+import { statusHex, statusLabel } from "@/lib/sms/status";
 import { GlbBody } from "./GlbBody";
 import { ZONE_BANDS } from "./holoMaterial";
 
@@ -134,39 +134,57 @@ function ScanRing({ y }: { y: number }) {
 
 /* ------------------------------------------------------------ sensor nodes */
 
-function SensorPoint({
-  position,
-  status,
+function SensorNode({
+  sensor,
   active,
   scanY,
-  onClick,
+  onSelect,
 }: {
-  position: [number, number, number];
-  status: Status;
+  sensor: SensorReading;
   active: boolean;
   scanY: number;
-  onClick: () => void;
+  onSelect: () => void;
 }) {
   const ring = useRef<THREE.Mesh>(null);
+  const ring2 = useRef<THREE.Mesh>(null);
   const halo = useRef<THREE.Mesh>(null);
+  const orbit = useRef<THREE.Group>(null);
   const light = useRef<THREE.PointLight>(null);
+  const core = useRef<THREE.Mesh>(null);
   const [hover, setHover] = useState(false);
-  const color = statusHex[status];
+  const color = statusHex[sensor.status];
+  const status = sensor.status;
+  const position = sensor.position;
+
+  // Pulse speed is driven by status: calm when nominal, urgent when critical.
+  const speed = status === "off" ? 0 : status === "crit" ? 2.2 : status === "warn" ? 1.4 : 0.75;
 
   useFrame(({ clock }) => {
-    const speed = active ? 1.9 : 0.9;
-    const t = (clock.elapsedTime * speed) % 1;
-    if (ring.current) {
-      ring.current.scale.setScalar(1 + t * 2.4);
-      (ring.current.material as THREE.MeshBasicMaterial).opacity = (1 - t) * (active ? 0.85 : 0.55);
+    const e = clock.elapsedTime;
+    const boost = active ? 1.6 : 1;
+    if (speed > 0) {
+      const t = (e * speed * boost) % 1;
+      if (ring.current) {
+        ring.current.scale.setScalar(1 + t * (status === "crit" ? 3.2 : 2.4));
+        (ring.current.material as THREE.MeshBasicMaterial).opacity = (1 - t) * (active ? 0.9 : 0.6);
+      }
+      if (ring2.current) {
+        const t2 = (t + 0.5) % 1;
+        ring2.current.scale.setScalar(1 + t2 * 2.6);
+        (ring2.current.material as THREE.MeshBasicMaterial).opacity =
+          (1 - t2) * (status === "crit" ? 0.6 : 0.28);
+      }
     }
     const near = Math.exp(-Math.pow((position[1] - scanY) * 14, 2));
+    const breathe = speed > 0 ? 1 + Math.sin(e * speed * 3) * 0.12 : 1;
+    if (core.current) core.current.scale.setScalar((active ? 1.9 : hover ? 1.5 : 1) * breathe);
     if (halo.current) {
-      const s = (active || hover ? 1.6 : 1) + near * 0.6;
-      halo.current.scale.setScalar(s);
-      (halo.current.material as THREE.MeshBasicMaterial).opacity = 0.18 + near * 0.25;
+      halo.current.scale.setScalar((active || hover ? 1.7 : 1.1) + near * 0.5);
+      (halo.current.material as THREE.MeshBasicMaterial).opacity =
+        (status === "off" ? 0.07 : 0.2) + near * 0.2 + (active ? 0.16 : 0);
     }
-    if (light.current) light.current.intensity = (active ? 1.1 : 0.35) + near * 0.5;
+    if (orbit.current) orbit.current.rotation.z = e * (active ? 1.1 : 0.5);
+    if (light.current) light.current.intensity = (active ? 1.4 : 0.4) * (status === "off" ? 0.2 : 1) + near * 0.4;
   });
 
   return (
@@ -174,7 +192,7 @@ function SensorPoint({
       position={position}
       onClick={(e) => {
         e.stopPropagation();
-        onClick();
+        onSelect();
       }}
       onPointerOver={(e) => {
         e.stopPropagation();
@@ -186,25 +204,98 @@ function SensorPoint({
         document.body.style.cursor = "auto";
       }}
     >
-      <mesh scale={active || hover ? 1.7 : 1}>
-        <sphereGeometry args={[0.02, 16, 16]} />
-        <meshBasicMaterial color={color} transparent opacity={0.95} />
+      {/* bright core */}
+      <mesh ref={core}>
+        <sphereGeometry args={[0.032, 20, 20]} />
+        <meshBasicMaterial color={color} transparent opacity={status === "off" ? 0.55 : 0.98} />
       </mesh>
+
+      {/* soft halo */}
       <mesh ref={halo}>
-        <sphereGeometry args={[0.05, 16, 16]} />
+        <sphereGeometry args={[0.07, 20, 20]} />
         <meshBasicMaterial
           color={color}
           transparent
-          opacity={0.18}
+          opacity={0.2}
           depthWrite={false}
           blending={THREE.AdditiveBlending}
         />
       </mesh>
+
+      {/* static outer ring + subtle orbit ring */}
+      <group ref={orbit}>
+        <mesh rotation={[Math.PI / 2.6, 0, 0]}>
+          <torusGeometry args={[0.062, 0.0035, 8, 40]} />
+          <meshBasicMaterial
+            color={color}
+            transparent
+            opacity={status === "off" ? 0.2 : active ? 0.85 : 0.5}
+            depthWrite={false}
+            blending={THREE.AdditiveBlending}
+          />
+        </mesh>
+      </group>
+
+      {/* expanding pulse rings */}
       <mesh ref={ring} rotation={[-Math.PI / 2, 0, 0]}>
-        <ringGeometry args={[0.03, 0.036, 24]} />
-        <meshBasicMaterial color={color} transparent side={THREE.DoubleSide} depthWrite={false} />
+        <ringGeometry args={[0.05, 0.058, 32]} />
+        <meshBasicMaterial
+          color={color}
+          transparent
+          side={THREE.DoubleSide}
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+        />
       </mesh>
-      <pointLight ref={light} color={color} intensity={0.35} distance={0.7} />
+      <mesh ref={ring2} rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[0.05, 0.054, 32]} />
+        <meshBasicMaterial
+          color={color}
+          transparent
+          opacity={0}
+          side={THREE.DoubleSide}
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+        />
+      </mesh>
+
+      <pointLight ref={light} color={color} intensity={0.4} distance={0.8} />
+
+      {/* connector line towards the label side */}
+      <line>
+        <bufferGeometry
+          attach="geometry"
+          onUpdate={(g) =>
+            g.setFromPoints([
+              new THREE.Vector3(0, 0, 0),
+              new THREE.Vector3(position[0] >= 0 ? 0.5 : -0.5, 0.12, 0.1),
+            ])
+          }
+        />
+        <lineBasicMaterial
+          attach="material"
+          color={color}
+          transparent
+          opacity={active ? 0.6 : 0.14}
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+        />
+      </line>
+
+      {hover || active ? (
+        <Html center distanceFactor={2.6} position={[0, 0.14, 0]} zIndexRange={[20, 0]}>
+          <div className="pointer-events-none w-36 rounded-md border border-primary/60 bg-popover/90 px-2 py-1 text-left shadow-[var(--glow-hud)] backdrop-blur">
+            <div className="hud-micro truncate">{sensor.label}</div>
+            <div className="hud-value text-sm" style={{ color }}>
+              {sensor.display}
+            </div>
+            <div className="hud-micro" style={{ color }}>
+              {statusLabel[sensor.status]}
+            </div>
+            <div className="hud-micro opacity-70">Sensor: {sensor.sensorId}</div>
+          </div>
+        </Html>
+      ) : null}
     </group>
   );
 }
