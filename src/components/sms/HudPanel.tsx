@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
+import { statusBg, statusText } from "@/lib/sms/status";
+import type { Status } from "@/lib/sms/types";
 
 export function HudPanel({
   title,
@@ -27,9 +29,9 @@ export function HudPanel({
   );
 }
 
-export function StatusDot({ tone, className }: { tone: "ok" | "warn" | "crit"; className?: string }) {
-  const bg = tone === "ok" ? "bg-ok" : tone === "warn" ? "bg-warn" : "bg-crit";
-  const glow = tone === "ok" ? "text-ok" : tone === "warn" ? "text-warn" : "text-crit";
+export function StatusDot({ tone, className }: { tone: Status; className?: string }) {
+  const bg = statusBg[tone];
+  const glow = statusText[tone];
   return <span className={cn("inline-block size-2 rounded-full pulse-dot", bg, glow, className)} />;
 }
 

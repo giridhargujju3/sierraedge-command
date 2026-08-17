@@ -26,7 +26,7 @@ export function AlertsPanel({ max = 6 }: { max?: number }) {
       bodyClassName="p-2 space-y-1.5 max-h-64 overflow-y-auto scroll-thin"
     >
       {alerts.slice(0, max).map((a) => {
-        const Icon = ICON[a.severity];
+        const Icon = ICON[a.severity as "ok" | "warn" | "crit"] ?? ICON.ok;
         return (
           <div
             key={a.id}
