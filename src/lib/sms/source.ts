@@ -6,7 +6,9 @@ import type {
   TelemetrySnapshot,
   TrendSeries,
   Vital,
+  GpsFix,
 } from "./types";
+import { MANNEQUINS, type MannequinConfig } from "./fleet";
 
 /**
  * Telemetry source contract. The dashboard only ever talks to this interface,
@@ -25,6 +27,7 @@ export interface TelemetrySource {
  */
 const BASE_TIME = 1767225600000; // 2026-01-01T00:00:00Z
 let seed = 0x5ee1;
+const setSeed = (v: number) => (seed = v);
 const rnd = () => {
   seed = (seed * 1664525 + 1013904223) % 4294967296;
   return seed / 4294967296;
@@ -76,6 +79,29 @@ const ZONE_LAYOUT: Record<BodyZone["id"], { label: string; metrics: string[]; po
   legs: { label: "LEGS", metrics: ["Motion", "Load", "Fatigue"], position: [0.13, 0.52, 0.1] },
 };
 
+/** 3D anchors per sensor (metres, model space) so nodes stay attached to the body. */
+const SENSOR_POSITIONS: Record<string, [number, number, number]> = {
+  coreTemp: [0.0, 1.06, 0.17],
+  heartRate: [-0.07, 1.37, 0.16],
+  respiration: [0.09, 1.27, 0.17],
+  spo2: [0.19, 1.46, 0.07],
+  stress: [0.0, 1.64, 0.12],
+  hydration: [-0.16, 0.98, 0.15],
+  fatigue: [0.13, 0.52, 0.11],
+  motion: [-0.44, 1.02, 0.06],
+};
+
+const SENSOR_IDS: Record<string, string> = {
+  heartRate: "S1",
+  coreTemp: "S2",
+  spo2: "S3",
+  respiration: "S4",
+  motion: "S5",
+  stress: "S6",
+  hydration: "S7",
+  fatigue: "S8",
+};
+
 type HistoryKey =
   | "heartRate"
   | "bodyTemp"
@@ -102,21 +128,35 @@ interface MutableState {
   histories: Record<HistoryKey, number[]>;
   alerts: AlertItem[];
   trends: TrendSeries[];
+  gps: { lat: number; lng: number; alt: number };
+  gpsUpdatedAt: string;
+  trail: [number, number][];
   /** Flips true after the first live tick so time-sensitive fields use real time. */
   live: boolean;
 }
 
-function initialState(): MutableState {
+function initialState(config: MannequinConfig): MutableState {
+  setSeed(config.seed);
+  const bias =
+    config.state === "crit"
+      ? { hr: 42, temp: 1.5, spo2: -7, stress: 45, fatigue: 55, hyd: -30 }
+      : config.state === "warn"
+        ? { hr: 22, temp: 0.9, spo2: -3, stress: 30, fatigue: 34, hyd: -20 }
+        : { hr: 0, temp: 0, spo2: 0, stress: 0, fatigue: 0, hyd: 0 };
+  const j = (n: number) => (rnd() - 0.5) * n;
   return {
-    heartRate: 72,
-    bodyTemp: 36.7,
-    spo2: 98,
-    respiration: 18,
-    stress: 22,
-    hydration: 81,
-    fatigue: 24,
-    motion: 64,
-    battery: 87,
+    heartRate: 72 + bias.hr + j(8),
+    bodyTemp: 36.7 + bias.temp + j(0.3),
+    spo2: 98 + bias.spo2 + j(1),
+    respiration: 18 + bias.hr * 0.12 + j(2),
+    stress: 22 + bias.stress + j(8),
+    hydration: 81 + bias.hyd + j(6),
+    fatigue: 24 + bias.fatigue + j(8),
+    motion: config.state === "offline" ? 0 : 64 + j(14),
+    battery: config.battery,
+    gps: { lat: config.lat, lng: config.lng, alt: config.alt },
+    gpsUpdatedAt: clock(0),
+    trail: [[config.lat, config.lng]],
     distance: 18.7,
     calories: 2450,
     live: false,
@@ -151,14 +191,16 @@ function pushHistory(list: number[], v: number) {
   return next.length > 40 ? next.slice(next.length - 40) : next;
 }
 
-function buildSnapshot(s: MutableState): TelemetrySnapshot {
-  const hrStatus = rangeStatus(s.heartRate, [55, 100], [45, 130]);
-  const tempStatus = rangeStatus(s.bodyTemp, [36.1, 37.5], [35.5, 38.5]);
-  const spo2Status = rangeStatus(s.spo2, [95, 100], [90, 100]);
-  const respStatus = rangeStatus(s.respiration, [12, 22], [9, 28]);
-  const stressStatus = rangeStatus(s.stress, [0, 55], [0, 78]);
-  const hydrationStatus = rangeStatus(s.hydration, [60, 100], [45, 100]);
-  const fatigueStatus = rangeStatus(s.fatigue, [0, 55], [0, 80]);
+function buildSnapshot(s: MutableState, config: MannequinConfig): TelemetrySnapshot {
+  const offline = config.state === "offline";
+  const st = (x: Status): Status => (offline ? "off" : x);
+  const hrStatus = st(rangeStatus(s.heartRate, [55, 100], [45, 130]));
+  const tempStatus = st(rangeStatus(s.bodyTemp, [36.1, 37.5], [35.5, 38.5]));
+  const spo2Status = st(rangeStatus(s.spo2, [95, 100], [90, 100]));
+  const respStatus = st(rangeStatus(s.respiration, [12, 22], [9, 28]));
+  const stressStatus = st(rangeStatus(s.stress, [0, 55], [0, 78]));
+  const hydrationStatus = st(rangeStatus(s.hydration, [60, 100], [45, 100]));
+  const fatigueStatus = st(rangeStatus(s.fatigue, [0, 55], [0, 80]));
 
   const vitals: Vital[] = [
     {
@@ -197,7 +239,7 @@ function buildSnapshot(s: MutableState): TelemetrySnapshot {
 
   const level = (v: number) => (v < 35 ? "LOW" : v < 65 ? "MODERATE" : "HIGH");
 
-  const sensors: SensorReading[] = [
+  const rawSensors: Omit<SensorReading, "sensorId" | "position">[] = [
     {
       key: "coreTemp",
       label: "Core Body Temp",
@@ -274,11 +316,17 @@ function buildSnapshot(s: MutableState): TelemetrySnapshot {
       value: Math.round(s.motion),
       unit: "%",
       display: s.motion > 30 ? "ACTIVE" : "STATIONARY",
-      status: "ok",
+      status: st("ok"),
       history: s.histories.motion,
       zone: "arms",
     },
   ];
+
+  const sensors: SensorReading[] = rawSensors.map((x) => ({
+    ...x,
+    sensorId: SENSOR_IDS[x.key] ?? x.key,
+    position: SENSOR_POSITIONS[x.key] ?? [0, 1, 0],
+  }));
 
   const zones: BodyZone[] = (Object.keys(ZONE_LAYOUT) as BodyZone["id"][]).map((id) => {
     const zoneSensors = sensors.filter((sensor) => sensor.zone === id);
@@ -287,7 +335,7 @@ function buildSnapshot(s: MutableState): TelemetrySnapshot {
       label: ZONE_LAYOUT[id].label,
       metrics: ZONE_LAYOUT[id].metrics,
       sensors: zoneSensors.map((x) => x.key),
-      status: worst(zoneSensors.map((x) => x.status)),
+      status: offline ? "off" : worst(zoneSensors.map((x) => x.status)),
       position: ZONE_LAYOUT[id].position,
     };
   });
