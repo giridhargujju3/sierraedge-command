@@ -349,14 +349,27 @@ function buildSnapshot(s: MutableState, config: MannequinConfig): TelemetrySnaps
     clamp(100 - (s.fatigue * 0.25 + s.stress * 0.2 + Math.abs(s.heartRate - 72) * 0.3), 40, 99),
   );
 
+  const fmt = (v: number, d = 4) => v.toFixed(d);
+  const gps: GpsFix = {
+    lat: s.gps.lat,
+    lng: s.gps.lng,
+    alt: s.gps.alt,
+    updatedAt: s.gpsUpdatedAt,
+    connected: !offline,
+  };
+
   return {
+    mannequinId: config.id,
+    mannequinLabel: config.label,
+    gps,
+    trail: s.trail,
     soldier: {
-      id: "7SE-ARMY-0245B",
-      name: "Arjun Verma",
-      rank: "Captain",
-      unit: "21 PARA (SF)",
-      mission: "Border Patrol",
-      status: "ACTIVE",
+      id: `7SE-ARMY-${config.id}-0245B`,
+      name: config.name,
+      rank: config.rank,
+      unit: config.unit,
+      mission: config.mission,
+      status: offline ? "OFFLINE" : "ACTIVE",
       avatarUrl: "",
     },
     vitals,
@@ -372,41 +385,57 @@ function buildSnapshot(s: MutableState, config: MannequinConfig): TelemetrySnaps
     ],
     alerts: s.alerts,
     location: {
-      location: "Northern Sector",
-      latitude: "34.4522° N",
-      longitude: "77.5946° E",
-      altitude: "2,850 m",
+      location: config.sector,
+      latitude: `${fmt(s.gps.lat)}° N`,
+      longitude: `${fmt(s.gps.lng)}° E`,
+      altitude: `${Math.round(s.gps.alt).toLocaleString("en-US")} m`,
       ambientTemp: "-5 °C",
       humidity: "38 %",
       weather: "Clear",
       condition: "Cold / High Altitude",
     },
     mission: {
-      name: "Border Patrol",
+      name: config.mission,
       duration: `${hh}:${mm}:${ss}`,
       distanceKm: Number(s.distance.toFixed(1)),
       calories: Math.round(s.calories),
       performance,
     },
     system: {
-      connection: "CONNECTED",
-      sensorsActive: 14,
+      connection: offline ? "OFFLINE" : config.state === "crit" ? "WARNING" : "CONNECTED",
+      sensorsActive: offline ? 0 : 14,
       sensorsTotal: 14,
       battery: Math.round(s.battery),
-      network: "SECURE",
-      lastSync: s.live ? liveClock() : clock(0),
+      network: offline ? "LOST" : config.state === "crit" ? "DEGRADED" : "SECURE",
+      lastSync: offline ? s.gpsUpdatedAt : s.live ? liveClock() : clock(0),
     },
     trends: s.trends,
   };
 }
 
-export function createMockTelemetrySource(intervalMs = 2000): TelemetrySource {
-  const state = initialState();
+export function createMockTelemetrySource(
+  config: MannequinConfig = MANNEQUINS[0]!,
+  intervalMs = 2000,
+): TelemetrySource {
+  const state = initialState(config);
+  const offline = config.state === "offline";
   let listeners: ((s: TelemetrySnapshot) => void)[] = [];
   let timer: ReturnType<typeof setInterval> | null = null;
 
   const tick = () => {
     state.live = true;
+    if (offline) {
+      listeners.forEach((l) => l(buildSnapshot(state, config)));
+      return;
+    }
+
+    // GPS drift — small steps so markers animate instead of teleporting.
+    state.gps.lat += (Math.random() - 0.5) * 0.00035;
+    state.gps.lng += (Math.random() - 0.5) * 0.00035;
+    state.gps.alt = clamp(state.gps.alt + (Math.random() - 0.5) * 3, config.alt - 60, config.alt + 60);
+    state.gpsUpdatedAt = liveClock();
+    state.trail = [...state.trail, [state.gps.lat, state.gps.lng] as [number, number]].slice(-25);
+
     state.heartRate = drift(state.heartRate, 5, 58, 118);
     state.bodyTemp = drift(state.bodyTemp, 0.14, 36.0, 38.2);
     state.spo2 = drift(state.spo2, 0.9, 92, 100);
@@ -459,12 +488,12 @@ export function createMockTelemetrySource(intervalMs = 2000): TelemetrySource {
       }
     }
 
-    const snapshot = buildSnapshot(state);
+    const snapshot = buildSnapshot(state, config);
     listeners.forEach((l) => l(snapshot));
   };
 
   return {
-    getSnapshot: () => buildSnapshot(state),
+    getSnapshot: () => buildSnapshot(state, config),
     subscribe(listener) {
       listeners.push(listener);
       if (!timer) timer = setInterval(tick, intervalMs);
