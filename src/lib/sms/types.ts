@@ -1,4 +1,4 @@
-export type Status = "ok" | "warn" | "crit";
+export type Status = "ok" | "warn" | "crit" | "off";
 
 export interface Soldier {
   id: string;
@@ -31,6 +31,8 @@ export type SensorKey =
 
 export interface SensorReading {
   key: SensorKey;
+  /** Per-mannequin sensor id, e.g. "S1". */
+  sensorId: string;
   label: string;
   value: number;
   unit: string;
@@ -38,6 +40,8 @@ export interface SensorReading {
   status: Status;
   history: number[];
   zone: BodyZoneId;
+  /** 3D anchor in metres, model space. */
+  position: [number, number, number];
 }
 
 export type BodyZoneId = "head" | "upperBody" | "arms" | "core" | "legs";
@@ -102,7 +106,21 @@ export interface TrendSeries {
   points: { t: string; v: number }[];
 }
 
+export interface GpsFix {
+  lat: number;
+  lng: number;
+  alt: number;
+  /** HH:MM:SS of the last fix. */
+  updatedAt: string;
+  connected: boolean;
+}
+
 export interface TelemetrySnapshot {
+  mannequinId: string;
+  mannequinLabel: string;
+  gps: GpsFix;
+  /** Recent GPS breadcrumb trail (oldest first). */
+  trail: [number, number][];
   soldier: Soldier;
   vitals: Vital[];
   sensors: SensorReading[];
