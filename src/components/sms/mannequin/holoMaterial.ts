@@ -50,7 +50,7 @@ const BODY_FRAG = /* glsl */ `
   void main() {
     vec3 N = normalize(vNormalW);
     vec3 V = normalize(vViewDirW);
-    float fres = pow(1.0 - clamp(dot(N, V), 0.0, 1.0), 4.5);
+    float fres = pow(1.0 - clamp(dot(N, V), 0.0, 1.0), 2.4);
 
     // scanlines along body height
     float lines = 0.5 + 0.5 * sin(vPosL.y * 190.0 - uTime * 1.4);
@@ -70,11 +70,11 @@ const BODY_FRAG = /* glsl */ `
 
     vec3 col = mix(uCore * 0.35, uEdge, fres);
     col = mix(col, uHighlight, hl * 0.85);
-    col += uEdge * sweep * 0.35;
+    col += uEdge * sweep * 0.8;
     col *= lines * grain;
     col *= mix(0.45, 1.0, 1.0 - uDim);
 
-    float alpha = uOpacity * (0.02 + fres * 1.0) + sweep * 0.10 + hl * 0.14;
+    float alpha = uOpacity * (0.10 + fres * 1.15) + sweep * 0.22 + hl * 0.20;
     gl_FragColor = vec4(col, clamp(alpha, 0.0, 1.0));
   }
 `;
@@ -90,7 +90,7 @@ const AURA_FRAG = /* glsl */ `
   void main() {
     vec3 N = normalize(vNormalW);
     vec3 V = normalize(vViewDirW);
-    float fres = pow(1.0 - clamp(dot(N, V), 0.0, 1.0), 3.4);
+    float fres = pow(1.0 - clamp(dot(N, V), 0.0, 1.0), 1.4);
     float pulse = 0.85 + 0.15 * sin(uTime * 1.6);
     float a = fres * uOpacity * pulse;
     gl_FragColor = vec4(uEdge, clamp(a, 0.0, 1.0));
@@ -104,7 +104,7 @@ export function createBodyMaterial() {
     transparent: true,
     depthWrite: false,
     blending: THREE.AdditiveBlending,
-    side: THREE.FrontSide,
+    side: THREE.DoubleSide,
     uniforms: {
       uInflate: { value: 0 },
       uTime: { value: 0 },
@@ -133,7 +133,7 @@ export function createAuraMaterial() {
       uInflate: { value: 0.02 },
       uTime: { value: 0 },
       uEdge: { value: new THREE.Color("#38c6f4") },
-      uOpacity: { value: 0.32 },
+      uOpacity: { value: 0.45 },
     },
   });
 }
@@ -143,7 +143,7 @@ export function createWireMaterial() {
     color: new THREE.Color("#63e2ff"),
     wireframe: true,
     transparent: true,
-    opacity: 0.05,
+    opacity: 0.12,
     depthWrite: false,
     blending: THREE.AdditiveBlending,
   });
