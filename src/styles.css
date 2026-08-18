@@ -200,3 +200,28 @@
 @utility pulse-dot {
   animation: pulse-dot 1.8s ease-in-out infinite;
 }
+
+/* ---- Leaflet fleet map (dark HUD skin) ---- */
+.leaflet-container {
+  background: oklch(0.16 0.03 240);
+  font-family: inherit;
+}
+.leaflet-control-zoom a {
+  background: var(--popover);
+  color: var(--foreground);
+  border-color: var(--panel-edge);
+}
+.leaflet-popup-content-wrapper,
+.leaflet-popup-tip {
+  background: var(--popover);
+  color: var(--foreground);
+  border: 1px solid var(--panel-edge);
+  border-radius: 0.375rem;
+}
+.fleet-marker-active {
+  animation: fleet-marker-pulse 2s ease-in-out infinite;
+}
+@keyframes fleet-marker-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
