@@ -12,7 +12,7 @@ import {
 import type { ComponentType } from "react";
 import { HudPanel } from "./HudPanel";
 import { Sparkline } from "./Sparkline";
-import { useTelemetry } from "@/lib/sms/TelemetryProvider";
+import { useFleet, useTelemetry } from "@/lib/sms/TelemetryProvider";
 import { statusText } from "@/lib/sms/status";
 import type { SensorKey, SensorReading } from "@/lib/sms/types";
 import { cn } from "@/lib/utils";
@@ -65,10 +65,13 @@ export function SensorDataPanel({
   activeKey?: SensorKey | null | undefined;
 }) {
   const { sensors } = useTelemetry();
+  const { selectedSensor, setSelectedSensor } = useFleet();
+  const handleSelect = onSelect ?? ((key: SensorKey) => setSelectedSensor(selectedSensor === key ? null : key));
+  const active = activeKey === undefined ? selectedSensor : activeKey;
   return (
     <HudPanel title="Sensor Data" bodyClassName="p-2 space-y-1.5">
       {sensors.map((s) => (
-        <SensorRow key={s.key} sensor={s} onSelect={onSelect} active={activeKey === s.key} />
+        <SensorRow key={s.key} sensor={s} onSelect={handleSelect} active={active === s.key} />
       ))}
     </HudPanel>
   );
