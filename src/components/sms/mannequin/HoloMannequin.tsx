@@ -16,17 +16,17 @@ const DEEP = "#1e6fff";
 function HoloLights() {
   return (
     <>
-      <ambientLight intensity={0.25} />
+      <ambientLight intensity={0.12} />
       {/* strong cyan backlight — creates the glowing silhouette */}
-      <pointLight position={[0, 1.35, -2.2]} intensity={40} color={HUD} distance={7} />
-      <directionalLight position={[0, 2.4, -3]} intensity={3.2} color={DEEP} />
+      <pointLight position={[0, 1.35, -2.2]} intensity={14} color={HUD} distance={7} />
+      <directionalLight position={[0, 2.4, -3]} intensity={1.2} color={DEEP} />
       {/* rim lights left / right behind the body */}
-      <pointLight position={[-1.8, 1.5, -1.2]} intensity={14} color={HUD} distance={6} />
-      <pointLight position={[1.8, 1.5, -1.2]} intensity={14} color={HUD} distance={6} />
+      <pointLight position={[-1.8, 1.5, -1.2]} intensity={5} color={HUD} distance={6} />
+      <pointLight position={[1.8, 1.5, -1.2]} intensity={5} color={HUD} distance={6} />
       {/* soft front fill */}
-      <pointLight position={[0, 1.4, 2.6]} intensity={5} color="#9fe8ff" distance={7} />
+      <pointLight position={[0, 1.4, 2.6]} intensity={1.6} color="#9fe8ff" distance={7} />
       {/* ground bounce under the feet */}
-      <pointLight position={[0, 0.08, 0]} intensity={6} color={HUD} distance={2.2} />
+      <pointLight position={[0, 0.08, 0]} intensity={2.2} color={HUD} distance={2.2} />
     </>
   );
 }
@@ -559,7 +559,7 @@ function Scene({
       />
 
       <EffectComposer enabled={!lowPower}>
-        <Bloom intensity={0.9} luminanceThreshold={0.25} luminanceSmoothing={0.35} mipmapBlur radius={0.7} />
+        <Bloom intensity={0.65} luminanceThreshold={0.55} luminanceSmoothing={0.35} mipmapBlur radius={0.7} />
       </EffectComposer>
     </>
   );
