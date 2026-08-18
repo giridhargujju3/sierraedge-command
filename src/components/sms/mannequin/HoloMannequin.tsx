@@ -3,7 +3,7 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Html, OrbitControls } from "@react-three/drei";
 import { Bloom, EffectComposer } from "@react-three/postprocessing";
 import * as THREE from "three";
-import type { BodyZone, BodyZoneId, SensorReading, Status } from "@/lib/sms/types";
+import type { BodyZone, BodyZoneId, SensorKey, SensorReading, Status } from "@/lib/sms/types";
 import { statusHex, statusLabel } from "@/lib/sms/status";
 import { GlbBody } from "./GlbBody";
 import { ZONE_BANDS } from "./holoMaterial";
@@ -16,17 +16,17 @@ const DEEP = "#1e6fff";
 function HoloLights() {
   return (
     <>
-      <ambientLight intensity={0.25} />
+      <ambientLight intensity={0.12} />
       {/* strong cyan backlight — creates the glowing silhouette */}
-      <pointLight position={[0, 1.35, -2.2]} intensity={40} color={HUD} distance={7} />
-      <directionalLight position={[0, 2.4, -3]} intensity={3.2} color={DEEP} />
+      <pointLight position={[0, 1.35, -2.2]} intensity={14} color={HUD} distance={7} />
+      <directionalLight position={[0, 2.4, -3]} intensity={1.2} color={DEEP} />
       {/* rim lights left / right behind the body */}
-      <pointLight position={[-1.8, 1.5, -1.2]} intensity={14} color={HUD} distance={6} />
-      <pointLight position={[1.8, 1.5, -1.2]} intensity={14} color={HUD} distance={6} />
+      <pointLight position={[-1.8, 1.5, -1.2]} intensity={5} color={HUD} distance={6} />
+      <pointLight position={[1.8, 1.5, -1.2]} intensity={5} color={HUD} distance={6} />
       {/* soft front fill */}
-      <pointLight position={[0, 1.4, 2.6]} intensity={5} color="#9fe8ff" distance={7} />
+      <pointLight position={[0, 1.4, 2.6]} intensity={1.6} color="#9fe8ff" distance={7} />
       {/* ground bounce under the feet */}
-      <pointLight position={[0, 0.08, 0]} intensity={6} color={HUD} distance={2.2} />
+      <pointLight position={[0, 0.08, 0]} intensity={2.2} color={HUD} distance={2.2} />
     </>
   );
 }
@@ -480,15 +480,19 @@ function CameraRig({ resetKey }: { resetKey: number }) {
 
 function Scene({
   zones,
+  sensors,
   selected,
-  onSelectZone,
+  selectedSensor,
+  onSelectSensor,
   autoRotate,
   resetKey,
   lowPower,
 }: {
   zones: BodyZone[];
+  sensors: SensorReading[];
   selected: BodyZoneId | null;
-  onSelectZone: (id: BodyZoneId) => void;
+  selectedSensor: SensorKey | null;
+  onSelectSensor: (key: SensorKey | null) => void;
   autoRotate: boolean;
   resetKey: number;
   lowPower: boolean;
@@ -505,7 +509,9 @@ function Scene({
     ? "crit"
     : zones.some((z) => z.status === "warn")
       ? "warn"
-      : "ok";
+      : zones.every((z) => z.status === "off")
+        ? "off"
+        : "ok";
   const tint = worstStatus === "ok" ? HUD : statusHex[worstStatus];
 
   return (
@@ -526,14 +532,13 @@ function Scene({
       <EnergyLines scanY={scanY} />
       <ScanRing y={scanY} />
 
-      {zones.map((z) => (
-        <SensorPoint
-          key={z.id}
-          position={z.position}
-          status={z.status}
-          active={selected === z.id}
+      {sensors.map((s) => (
+        <SensorNode
+          key={s.key}
+          sensor={s}
+          active={selectedSensor === s.key}
           scanY={scanY}
-          onClick={() => onSelectZone(z.id)}
+          onSelect={() => onSelectSensor(selectedSensor === s.key ? null : s.key)}
         />
       ))}
 
@@ -554,7 +559,7 @@ function Scene({
       />
 
       <EffectComposer enabled={!lowPower}>
-        <Bloom intensity={0.9} luminanceThreshold={0.25} luminanceSmoothing={0.35} mipmapBlur radius={0.7} />
+        <Bloom intensity={0.65} luminanceThreshold={0.55} luminanceSmoothing={0.35} mipmapBlur radius={0.7} />
       </EffectComposer>
     </>
   );
@@ -562,14 +567,18 @@ function Scene({
 
 export default function HoloMannequin({
   zones,
+  sensors,
   selected,
-  onSelectZone,
+  selectedSensor,
+  onSelectSensor,
   autoRotate = false,
   resetKey = 0,
 }: {
   zones: BodyZone[];
+  sensors: SensorReading[];
   selected: BodyZoneId | null;
-  onSelectZone: (id: BodyZoneId) => void;
+  selectedSensor: SensorKey | null;
+  onSelectSensor: (key: SensorKey | null) => void;
   autoRotate?: boolean;
   resetKey?: number;
 }) {
@@ -587,12 +596,14 @@ export default function HoloMannequin({
       camera={{ position: [0, 1.05, 4.2], fov: 34 }}
       dpr={lowPower ? 1 : [1, 1.8]}
       gl={{ antialias: !lowPower, alpha: true, powerPreference: "high-performance" }}
-      onPointerMissed={() => onSelectZone("" as BodyZoneId)}
+      onPointerMissed={() => onSelectSensor(null)}
     >
       <Scene
         zones={zones}
+        sensors={sensors}
         selected={selected}
-        onSelectZone={onSelectZone}
+        selectedSensor={selectedSensor}
+        onSelectSensor={onSelectSensor}
         autoRotate={autoRotate}
         resetKey={resetKey}
         lowPower={lowPower}
@@ -602,3 +613,4 @@ export default function HoloMannequin({
 }
 
 export { ZONE_BANDS };
+
