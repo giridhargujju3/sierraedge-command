@@ -3,7 +3,7 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Html, OrbitControls } from "@react-three/drei";
 import { Bloom, EffectComposer } from "@react-three/postprocessing";
 import * as THREE from "three";
-import type { BodyZone, BodyZoneId, SensorReading, Status } from "@/lib/sms/types";
+import type { BodyZone, BodyZoneId, SensorKey, SensorReading, Status } from "@/lib/sms/types";
 import { statusHex, statusLabel } from "@/lib/sms/status";
 import { GlbBody } from "./GlbBody";
 import { ZONE_BANDS } from "./holoMaterial";
