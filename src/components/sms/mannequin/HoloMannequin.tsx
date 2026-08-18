@@ -480,15 +480,19 @@ function CameraRig({ resetKey }: { resetKey: number }) {
 
 function Scene({
   zones,
+  sensors,
   selected,
-  onSelectZone,
+  selectedSensor,
+  onSelectSensor,
   autoRotate,
   resetKey,
   lowPower,
 }: {
   zones: BodyZone[];
+  sensors: SensorReading[];
   selected: BodyZoneId | null;
-  onSelectZone: (id: BodyZoneId) => void;
+  selectedSensor: SensorKey | null;
+  onSelectSensor: (key: SensorKey | null) => void;
   autoRotate: boolean;
   resetKey: number;
   lowPower: boolean;
@@ -505,7 +509,9 @@ function Scene({
     ? "crit"
     : zones.some((z) => z.status === "warn")
       ? "warn"
-      : "ok";
+      : zones.every((z) => z.status === "off")
+        ? "off"
+        : "ok";
   const tint = worstStatus === "ok" ? HUD : statusHex[worstStatus];
 
   return (
@@ -526,14 +532,13 @@ function Scene({
       <EnergyLines scanY={scanY} />
       <ScanRing y={scanY} />
 
-      {zones.map((z) => (
-        <SensorPoint
-          key={z.id}
-          position={z.position}
-          status={z.status}
-          active={selected === z.id}
+      {sensors.map((s) => (
+        <SensorNode
+          key={s.key}
+          sensor={s}
+          active={selectedSensor === s.key}
           scanY={scanY}
-          onClick={() => onSelectZone(z.id)}
+          onSelect={() => onSelectSensor(selectedSensor === s.key ? null : s.key)}
         />
       ))}
 
@@ -562,14 +567,18 @@ function Scene({
 
 export default function HoloMannequin({
   zones,
+  sensors,
   selected,
-  onSelectZone,
+  selectedSensor,
+  onSelectSensor,
   autoRotate = false,
   resetKey = 0,
 }: {
   zones: BodyZone[];
+  sensors: SensorReading[];
   selected: BodyZoneId | null;
-  onSelectZone: (id: BodyZoneId) => void;
+  selectedSensor: SensorKey | null;
+  onSelectSensor: (key: SensorKey | null) => void;
   autoRotate?: boolean;
   resetKey?: number;
 }) {
@@ -587,12 +596,14 @@ export default function HoloMannequin({
       camera={{ position: [0, 1.05, 4.2], fov: 34 }}
       dpr={lowPower ? 1 : [1, 1.8]}
       gl={{ antialias: !lowPower, alpha: true, powerPreference: "high-performance" }}
-      onPointerMissed={() => onSelectZone("" as BodyZoneId)}
+      onPointerMissed={() => onSelectSensor(null)}
     >
       <Scene
         zones={zones}
+        sensors={sensors}
         selected={selected}
-        onSelectZone={onSelectZone}
+        selectedSensor={selectedSensor}
+        onSelectSensor={onSelectSensor}
         autoRotate={autoRotate}
         resetKey={resetKey}
         lowPower={lowPower}
@@ -602,3 +613,4 @@ export default function HoloMannequin({
 }
 
 export { ZONE_BANDS };
+
