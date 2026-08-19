@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useMemo, useState } from "react";
+import { Suspense, lazy, useEffect, useMemo, useState, Component, type ErrorInfo, type ReactNode } from "react";
 import { Maximize2, Orbit, RotateCcw } from "lucide-react";
 import { useFleet, useTelemetry } from "@/lib/sms/TelemetryProvider";
 import { statusLabel, statusText } from "@/lib/sms/status";
@@ -7,6 +7,22 @@ import { Sparkline } from "./Sparkline";
 import { cn } from "@/lib/utils";
 
 const HoloMannequin = lazy(() => import("./mannequin/HoloMannequin"));
+
+class ThreeErrorBoundary extends Component<
+  { children: ReactNode; fallback: ReactNode },
+  { hasError: boolean }
+> {
+  override state = { hasError: false };
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+  override componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error("3D scene error:", error, info.componentStack);
+  }
+  override render() {
+    return this.state.hasError ? this.props.fallback : this.props.children;
+  }
+}
 
 const CALLOUTS: { id: BodyZoneId; side: "left" | "right"; top: string }[] = [
   { id: "head", side: "right", top: "6%" },
@@ -85,18 +101,26 @@ export function MannequinStage() {
 
       <div className="absolute inset-0">
         {mounted ? (
-          <Suspense fallback={null}>
-            <HoloMannequin
-              key={selectedId}
-              zones={zones}
-              sensors={sensors}
-              selected={selectedZoneId}
-              selectedSensor={selectedSensor}
-              onSelectSensor={setSelectedSensor}
-              autoRotate={autoRotate}
-              resetKey={resetKey}
-            />
-          </Suspense>
+          <ThreeErrorBoundary
+            fallback={
+              <div className="flex h-full items-center justify-center text-muted-foreground hud-micro">
+                3D model unavailable
+              </div>
+            }
+          >
+            <Suspense fallback={null}>
+              <HoloMannequin
+                key={selectedId}
+                zones={zones}
+                sensors={sensors}
+                selected={selectedZoneId}
+                selectedSensor={selectedSensor}
+                onSelectSensor={setSelectedSensor}
+                autoRotate={autoRotate}
+                resetKey={resetKey}
+              />
+            </Suspense>
+          </ThreeErrorBoundary>
         ) : null}
       </div>
 

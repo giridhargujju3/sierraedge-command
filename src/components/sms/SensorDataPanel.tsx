@@ -43,7 +43,7 @@ export function SensorRow({
       type="button"
       onClick={() => onSelect?.(sensor.key)}
       className={cn(
-        "flex w-full items-center gap-2.5 rounded-md border border-panel-edge/60 bg-secondary/35 px-2.5 py-2 text-left transition-all hover:border-primary/60 hover:bg-secondary/70",
+        "flex w-full items-center gap-2.5 overflow-hidden rounded-md border border-panel-edge/60 bg-secondary/35 px-2.5 py-2 text-left transition-all hover:border-primary/60 hover:bg-secondary/70",
         active && "border-primary bg-secondary/80",
       )}
     >

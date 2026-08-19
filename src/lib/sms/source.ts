@@ -364,7 +364,7 @@ function buildSnapshot(s: MutableState, config: MannequinConfig): TelemetrySnaps
     gps,
     trail: s.trail,
     soldier: {
-      id: `7SE-ARMY-${config.id}-0245B`,
+      id: config.label,
       name: config.name,
       rank: config.rank,
       unit: config.unit,

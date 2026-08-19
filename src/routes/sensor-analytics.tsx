@@ -53,7 +53,7 @@ function SensorAnalytics() {
               </div>
             ))}
           </div>
-          <div className="mt-3 flex items-center justify-between rounded-md border border-panel-edge/70 bg-secondary/30 p-3">
+          <div className="mt-3 flex items-center justify-between overflow-hidden rounded-md border border-panel-edge/70 bg-secondary/30 p-3">
             <span className="hud-micro">Live waveform</span>
             <Sparkline data={sensor.history} status={sensor.status} width={420} height={54} />
             <span className={cn("hud-label", statusText[sensor.status])}>{statusLabel[sensor.status]}</span>

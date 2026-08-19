@@ -17,7 +17,7 @@ const ICONS: Record<Vital["key"], ComponentType<{ className?: string }>> = {
 function VitalCard({ vital }: { vital: Vital }) {
   const Icon = ICONS[vital.key] ?? Activity;
   return (
-    <div className="group rounded-md border border-panel-edge/70 bg-secondary/40 p-2.5 transition-colors hover:border-primary/50 hover:bg-secondary/70">
+    <div className="group overflow-hidden rounded-md border border-panel-edge/70 bg-secondary/40 p-2.5 transition-colors hover:border-primary/50 hover:bg-secondary/70">
       <div className="flex items-center gap-2">
         <Icon className={cn("size-4", statusText[vital.status])} />
         <span className="hud-micro">{vital.label}</span>
