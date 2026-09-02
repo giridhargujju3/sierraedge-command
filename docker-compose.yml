@@ -2,4 +2,4 @@ services:
   app:
     build: .
     ports:
-      - "8084:3000"
+      - "7092:3000"

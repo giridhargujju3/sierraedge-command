@@ -1,4 +1,4 @@
-import { Suspense, useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState, type ComponentRef, type Ref } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Html, OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
@@ -7,6 +7,13 @@ import { statusHex, statusLabel } from "@/lib/sms/status";
 import { GlbBody } from "./GlbBody";
 
 const HUD = "#4fd8ff";
+
+/** Ref type of the drei OrbitControls instance driving the stage camera. */
+export type MannequinControls = NonNullable<ComponentRef<typeof OrbitControls>>;
+
+/** Vertical pan limits (target height, metres) — the body stays reachable at any zoom. */
+export const TARGET_MIN_Y = 0.25;
+export const TARGET_MAX_Y = 1.9;
 
 /* ------------------------------------------------------------------ lights */
 
@@ -47,7 +54,8 @@ function SensorNode({
     if (ring.current) {
       const pulse = speed > 0 ? (e * speed) % 1 : 0;
       ring.current.scale.setScalar(1 + pulse * 1.5);
-      (ring.current.material as THREE.MeshBasicMaterial).opacity = (1 - pulse) * (active ? 0.7 : 0.35);
+      (ring.current.material as THREE.MeshBasicMaterial).opacity =
+        (1 - pulse) * (active ? 0.7 : 0.35);
     }
   });
 
@@ -75,30 +83,27 @@ function SensorNode({
 
       <mesh ref={ring} rotation={[-Math.PI / 2, 0, 0]}>
         <ringGeometry args={[0.04, 0.048, 24]} />
-        <meshBasicMaterial color={color} transparent opacity={0.4} side={THREE.DoubleSide} depthWrite={false} />
+        <meshBasicMaterial
+          color={color}
+          transparent
+          opacity={0.4}
+          side={THREE.DoubleSide}
+          depthWrite={false}
+        />
       </mesh>
 
       <pointLight color={color} intensity={active ? 0.8 : 0.2} distance={0.6} />
-
-      <line>
-        <bufferGeometry
-          attach="geometry"
-          onUpdate={(g) =>
-            g.setFromPoints([
-              new THREE.Vector3(0, 0, 0),
-              new THREE.Vector3(position[0] >= 0 ? 0.5 : -0.5, 0.12, 0.1),
-            ])
-          }
-        />
-        <lineBasicMaterial attach="material" color={color} transparent opacity={active ? 0.6 : 0.15} depthWrite={false} />
-      </line>
 
       {hover || active ? (
         <Html center distanceFactor={2.6} position={[0, 0.14, 0]} zIndexRange={[20, 0]}>
           <div className="pointer-events-none w-36 rounded-md border border-primary/60 bg-popover/90 px-2 py-1 text-left shadow-[var(--glow-hud)] backdrop-blur">
             <div className="hud-micro truncate">{sensor.label}</div>
-            <div className="hud-value text-sm" style={{ color }}>{sensor.display}</div>
-            <div className="hud-micro" style={{ color }}>{statusLabel[sensor.status]}</div>
+            <div className="hud-value text-sm" style={{ color }}>
+              {sensor.display}
+            </div>
+            <div className="hud-micro" style={{ color }}>
+              {statusLabel[sensor.status]}
+            </div>
             <div className="hud-micro opacity-70">Sensor: {sensor.sensorId}</div>
           </div>
         </Html>
@@ -135,14 +140,102 @@ function FallbackBody() {
   );
 }
 
+/* -------------------------------------------------------------- projector */
+
+/** A model-space point tracked for the HUD overlay (zone anchors, sensor nodes). */
+export interface ProjectPoint {
+  id: string;
+  pos: [number, number, number];
+}
+
+/** Screen-space callback: CSS-pixel coordinates within the canvas + facing flag. */
+export type ProjectFn = (id: string, x: number, y: number, front: boolean) => void;
+
+const _pt = new THREE.Vector3();
+const _out = new THREE.Vector3();
+const _toCam = new THREE.Vector3();
+
+/**
+ * Projects HUD anchor points to screen pixels every frame so the DOM overlay
+ * (callout boxes + SVG connectors in MannequinStage) stays glued to the 3D
+ * sensor nodes while orbiting / zooming / panning. `front` tells the overlay
+ * whether the point is on the camera-facing side of the body axis.
+ */
+function AnchorProjector({
+  points,
+  onUpdate,
+}: {
+  points: ProjectPoint[];
+  onUpdate?: ProjectFn | undefined;
+}) {
+  const camera = useThree((s) => s.camera);
+  const size = useThree((s) => s.size);
+  const cb = useRef<ProjectFn | undefined>(undefined);
+  cb.current = onUpdate;
+  useFrame(() => {
+    const fn = cb.current;
+    if (!fn) return;
+    for (const p of points) {
+      _pt.set(p.pos[0], p.pos[1], p.pos[2]);
+      /* Facing test — is the point on the camera-facing side of the body axis?
+       * Points on the axis itself (x=z≈0) fall back to the camera z hemisphere. */
+      _out.set(p.pos[0], 0, p.pos[2]);
+      _toCam.copy(camera.position).sub(_pt);
+      const front = _out.lengthSq() < 1e-8 ? _toCam.z > 0 : _out.dot(_toCam) > 0;
+      _pt.project(camera);
+      fn(p.id, (_pt.x * 0.5 + 0.5) * size.width, (-_pt.y * 0.5 + 0.5) * size.height, front);
+    }
+  });
+  return null;
+}
+
 /* ----------------------------------------------------------------- camera */
 
-function CameraRig({ resetKey }: { resetKey: number }) {
-  const { camera } = useThree();
+export type CameraView = { p: [number, number, number]; t: [number, number, number] };
+
+const FACTORY_POS: [number, number, number] = [0, 1.05, 4.2];
+const FACTORY_TARGET: [number, number, number] = [0, 0.95, 0];
+
+function CameraRig({
+  resetKey,
+  savedView,
+}: {
+  resetKey: number;
+  savedView?: CameraView | undefined;
+}) {
+  const camera = useThree((s) => s.camera);
+  const controls = useThree((s) => s.controls) as unknown as {
+    target?: THREE.Vector3;
+    update?: () => void;
+  } | null;
+
+  /* Mount / controls attach → restore the operator's saved view (SAVE VIEW
+   * button) or fall back to the factory default. */
   useEffect(() => {
-    camera.position.set(0, 1.05, 4.2);
+    const [px, py, pz] = savedView ? savedView.p : FACTORY_POS;
+    const [tx, ty, tz] = savedView ? savedView.t : FACTORY_TARGET;
+    camera.position.set(px, py, pz);
+    // The pan target must move with the camera or the view drifts back.
+    if (controls?.target) {
+      controls.target.set(tx, ty, tz);
+      controls.update?.();
+    }
     camera.updateProjectionMatrix();
-  }, [camera, resetKey]);
+  }, [camera, controls, savedView]);
+
+  /* RESET button → factory default (skips the mount run). */
+  const prevReset = useRef(resetKey);
+  useEffect(() => {
+    if (prevReset.current === resetKey) return;
+    prevReset.current = resetKey;
+    camera.position.set(FACTORY_POS[0], FACTORY_POS[1], FACTORY_POS[2]);
+    // RESET must restore the pan target as well, not just the camera position.
+    if (controls?.target) {
+      controls.target.set(FACTORY_TARGET[0], FACTORY_TARGET[1], FACTORY_TARGET[2]);
+      controls.update?.();
+    }
+    camera.updateProjectionMatrix();
+  }, [resetKey, camera, controls]);
   return null;
 }
 
@@ -156,6 +249,9 @@ function Scene({
   onSelectSensor,
   autoRotate,
   resetKey,
+  controlsRef,
+  onAnchors,
+  savedView,
 }: {
   zones: BodyZone[];
   sensors: SensorReading[];
@@ -164,19 +260,29 @@ function Scene({
   onSelectSensor: (key: SensorKey | null) => void;
   autoRotate: boolean;
   resetKey: number;
+  controlsRef?: Ref<MannequinControls> | undefined;
+  onAnchors?: ProjectFn | undefined;
+  savedView?: CameraView | undefined;
 }) {
   const scanRef = useRef(0);
+
+  /* HUD anchor points (model space) projected to screen pixels every frame so
+   * the DOM overlay can draw callout boxes + elbow connectors onto the live
+   * sensor nodes — like a schematic holo rig around the soldier. */
+  const anchorPoints = useMemo<ProjectPoint[]>(
+    () => [
+      ...zones.map((z): ProjectPoint => ({ id: `zone:${z.id}`, pos: z.position })),
+      ...sensors.map((s): ProjectPoint => ({ id: `sensor:${s.key}`, pos: s.position })),
+    ],
+    [zones, sensors],
+  );
 
   return (
     <>
       <BasicLights />
 
       <Suspense fallback={<FallbackBody />}>
-        <GlbBody
-          zones={zones}
-          selected={selected}
-          onScan={(y) => (scanRef.current = y)}
-        />
+        <GlbBody zones={zones} selected={selected} onScan={(y) => (scanRef.current = y)} />
       </Suspense>
 
       {sensors.map((s) => (
@@ -190,10 +296,15 @@ function Scene({
 
       <Platform />
 
-      <CameraRig resetKey={resetKey} />
+      <AnchorProjector points={anchorPoints} onUpdate={onAnchors} />
+      <CameraRig resetKey={resetKey} savedView={savedView} />
       <OrbitControls
-        enablePan={false}
-        minDistance={1.8}
+        ref={controlsRef}
+        makeDefault
+        enablePan
+        panSpeed={0.9}
+        screenSpacePanning
+        minDistance={1.15}
         maxDistance={4.6}
         target={[0, 0.95, 0]}
         maxPolarAngle={Math.PI / 1.85}
@@ -214,6 +325,9 @@ export default function HoloMannequin({
   onSelectSensor,
   autoRotate = false,
   resetKey = 0,
+  controlsRef,
+  onAnchors,
+  savedView,
 }: {
   zones: BodyZone[];
   sensors: SensorReading[];
@@ -222,6 +336,9 @@ export default function HoloMannequin({
   onSelectSensor: (key: SensorKey | null) => void;
   autoRotate?: boolean;
   resetKey?: number;
+  controlsRef?: Ref<MannequinControls> | undefined;
+  onAnchors?: ProjectFn | undefined;
+  savedView?: CameraView | undefined;
 }) {
   const [lowPower, setLowPower] = useState(false);
   useEffect(() => {
@@ -248,6 +365,9 @@ export default function HoloMannequin({
         onSelectSensor={onSelectSensor}
         autoRotate={autoRotate}
         resetKey={resetKey}
+        controlsRef={controlsRef}
+        onAnchors={onAnchors}
+        savedView={savedView}
       />
     </Canvas>
   );

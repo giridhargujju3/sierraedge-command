@@ -13,9 +13,16 @@ export const Route = createFileRoute("/sensor-analytics")({
   head: () => ({
     meta: [
       { title: "Sensor Analytics — SierraEdge Smart Mannequin System" },
-      { name: "description", content: "Per-sensor analytics, thresholds and distribution for the smart mannequin sensor mesh." },
+      {
+        name: "description",
+        content:
+          "Per-sensor analytics, thresholds and distribution for the smart mannequin sensor mesh.",
+      },
       { property: "og:title", content: "Sensor Analytics — SierraEdge SMS" },
-      { property: "og:description", content: "Per-sensor analytics and thresholds for the smart mannequin sensor mesh." },
+      {
+        property: "og:description",
+        content: "Per-sensor analytics and thresholds for the smart mannequin sensor mesh.",
+      },
     ],
   }),
   component: SensorAnalytics,
@@ -23,7 +30,7 @@ export const Route = createFileRoute("/sensor-analytics")({
 
 function SensorAnalytics() {
   const { sensors } = useTelemetry();
-  const [active, setActive] = useState<SensorKey>("heartRate");
+  const [active, setActive] = useState<SensorKey>("tempChest");
   const sensor = sensors.find((s) => s.key === active) ?? sensors[0]!;
   const values = sensor.history;
   const min = Math.min(...values);
@@ -47,7 +54,10 @@ function SensorAnalytics() {
               { l: "Minimum", v: `${min.toFixed(1)} ${sensor.unit}` },
               { l: "Maximum", v: `${max.toFixed(1)} ${sensor.unit}` },
             ].map((m) => (
-              <div key={m.l} className="rounded-md border border-panel-edge/70 bg-secondary/40 p-2.5">
+              <div
+                key={m.l}
+                className="rounded-md border border-panel-edge/70 bg-secondary/40 p-2.5"
+              >
                 <div className="hud-micro">{m.l}</div>
                 <div className="hud-value mt-1 text-xl">{m.v}</div>
               </div>
@@ -56,7 +66,9 @@ function SensorAnalytics() {
           <div className="mt-3 flex items-center justify-between overflow-hidden rounded-md border border-panel-edge/70 bg-secondary/30 p-3">
             <span className="hud-micro">Live waveform</span>
             <Sparkline data={sensor.history} status={sensor.status} width={420} height={54} />
-            <span className={cn("hud-label", statusText[sensor.status])}>{statusLabel[sensor.status]}</span>
+            <span className={cn("hud-label", statusText[sensor.status])}>
+              {statusLabel[sensor.status]}
+            </span>
           </div>
         </HudPanel>
         <TrendsPanel columns={2} height={130} />

@@ -1,4 +1,12 @@
+import { useCallback, useRef, useState, type CSSProperties } from "react";
 import { createFileRoute } from "@tanstack/react-router";
+import { SidebarResizeHandle } from "@/components/sms/SidebarResizeHandle";
+import {
+  SIDEBAR_DEFAULTS,
+  readSidebarWidths,
+  writeSidebarWidths,
+  type SidebarWidths,
+} from "@/lib/sms/sidebarWidths";
 import { SoldierOverview } from "@/components/sms/SoldierOverview";
 import { VitalSigns } from "@/components/sms/VitalSigns";
 import { LocationPanel } from "@/components/sms/LocationPanel";
@@ -22,7 +30,8 @@ export const Route = createFileRoute("/")({
       { property: "og:title", content: "SierraEdge SMS — Smart Mannequin Command Dashboard" },
       {
         property: "og:description",
-        content: "Holographic 3D digital twin with live vitals, sensor zones, alerts and mission telemetry.",
+        content:
+          "Holographic 3D digital twin with live vitals, sensor zones, alerts and mission telemetry.",
       },
     ],
   }),
@@ -30,8 +39,23 @@ export const Route = createFileRoute("/")({
 });
 
 function Dashboard() {
+  const [widths, setWidths] = useState<SidebarWidths>(readSidebarWidths);
+  const gridRef = useRef<HTMLDivElement>(null);
+
+  const commitWidth = useCallback((side: "left" | "right", w: number) => {
+    setWidths((prev) => {
+      const next = { ...prev, [side]: w };
+      writeSidebarWidths(next);
+      return next;
+    });
+  }, []);
+
   return (
-    <div className="grid h-full min-h-0 gap-3 xl:grid-cols-[19rem_minmax(0,1fr)_20rem]">
+    <div
+      ref={gridRef}
+      style={{ "--lw": `${widths.left}px`, "--rw": `${widths.right}px` } as CSSProperties}
+      className="relative grid h-full min-h-0 gap-3 xl:[grid-template-columns:var(--lw)_minmax(0,1fr)_var(--rw)]"
+    >
       <div className="min-h-0 space-y-3 xl:overflow-y-auto xl:pr-1 scroll-thin">
         <SoldierOverview />
         <VitalSigns />
@@ -48,9 +72,25 @@ function Dashboard() {
         <MissionPanel />
         <AlertsPanel />
         <EquipmentPanel />
-        <TrendsPanel keys={["heartRate", "coreTemp"]} />
+        <TrendsPanel keys={["tempChest", "gasAir"]} />
       </div>
+
+      <SidebarResizeHandle
+        side="left"
+        width={widths.left}
+        defaultWidth={SIDEBAR_DEFAULTS.left}
+        cssVar="--lw"
+        containerRef={gridRef}
+        onCommit={commitWidth}
+      />
+      <SidebarResizeHandle
+        side="right"
+        width={widths.right}
+        defaultWidth={SIDEBAR_DEFAULTS.right}
+        cssVar="--rw"
+        containerRef={gridRef}
+        onCommit={commitWidth}
+      />
     </div>
   );
 }
-

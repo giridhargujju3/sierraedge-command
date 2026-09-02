@@ -1,4 +1,4 @@
-import { Activity, Droplets, HeartPulse, Thermometer, Wind } from "lucide-react";
+import { Activity, AudioLines, Thermometer, Wind, Zap } from "lucide-react";
 import type { ComponentType } from "react";
 import { HudPanel } from "./HudPanel";
 import { Sparkline } from "./Sparkline";
@@ -8,10 +8,10 @@ import type { Vital } from "@/lib/sms/types";
 import { cn } from "@/lib/utils";
 
 const ICONS: Record<Vital["key"], ComponentType<{ className?: string }>> = {
-  heartRate: HeartPulse,
   bodyTemp: Thermometer,
-  spo2: Droplets,
-  respiration: Wind,
+  airQuality: Wind,
+  acoustic: AudioLines,
+  impact: Zap,
 };
 
 function VitalCard({ vital }: { vital: Vital }) {
@@ -29,7 +29,9 @@ function VitalCard({ vital }: { vital: Vital }) {
         </div>
         <Sparkline data={vital.history} status={vital.status} width={64} height={22} />
       </div>
-      <div className={cn("hud-micro mt-1", statusText[vital.status])}>{statusLabel[vital.status]}</div>
+      <div className={cn("hud-micro mt-1", statusText[vital.status])}>
+        {statusLabel[vital.status]}
+      </div>
     </div>
   );
 }

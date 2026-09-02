@@ -4,14 +4,22 @@ import { VitalSigns } from "@/components/sms/VitalSigns";
 import { AlertsPanel } from "@/components/sms/AlertsPanel";
 import { SystemStatus } from "@/components/sms/SystemStatus";
 import { TrendsPanel } from "@/components/sms/TrendsPanel";
+import { Esp32LiveDataPanel } from "@/components/sms/Esp32LiveDataPanel";
 
 export const Route = createFileRoute("/live-monitor")({
   head: () => ({
     meta: [
       { title: "Live Monitor — SierraEdge Smart Mannequin System" },
-      { name: "description", content: "Live vital-sign monitoring and holographic body tracking for the active operator." },
+      {
+        name: "description",
+        content:
+          "Live vital-sign monitoring and holographic body tracking for the active operator.",
+      },
       { property: "og:title", content: "Live Monitor — SierraEdge SMS" },
-      { property: "og:description", content: "Live vital-sign monitoring and holographic body tracking." },
+      {
+        property: "og:description",
+        content: "Live vital-sign monitoring and holographic body tracking.",
+      },
     ],
   }),
   component: LiveMonitor,
@@ -25,6 +33,7 @@ function LiveMonitor() {
         <TrendsPanel columns={2} height={110} />
       </div>
       <div className="space-y-3">
+        <Esp32LiveDataPanel />
         <VitalSigns />
         <AlertsPanel max={8} />
         <SystemStatus />

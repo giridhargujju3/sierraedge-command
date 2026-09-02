@@ -1,19 +1,28 @@
 import type {
   AlertItem,
-  BodyZone,
+  SensorKey,
   SensorReading,
   Status,
   TelemetrySnapshot,
   TrendSeries,
-  Vital,
-  GpsFix,
 } from "./types";
 import { MANNEQUINS, type MannequinConfig } from "./fleet";
+import {
+  ESP32_CHANNELS,
+  ESP32_SENSOR_TOTAL,
+  channelAlertCandidates,
+  channelStatus,
+  deriveRigVitals,
+  formatChannelDisplay,
+  rigEquipment,
+  rigZones,
+  type ChannelValues,
+} from "./esp32";
 
 /**
  * Telemetry source contract. The dashboard only ever talks to this interface,
- * so the mock generator below can be swapped for a REST poller or WebSocket
- * client without touching a single UI component.
+ * so the demo simulator below can be swapped for the live ESP32 poller
+ * (see esp32Source.ts) without touching a single UI component.
  */
 export interface TelemetrySource {
   getSnapshot(): TelemetrySnapshot;
@@ -38,7 +47,10 @@ const drift = (v: number, amount: number, min: number, max: number) =>
   clamp(v + (Math.random() - 0.5) * amount, min, max);
 
 const seedHistory = (base: number, spread: number, n = 24) =>
-  Array.from({ length: n }, (_, i) => base + Math.sin(i / 2.4) * spread * 0.6 + (rnd() - 0.5) * spread);
+  Array.from(
+    { length: n },
+    (_, i) => base + Math.sin(i / 2.4) * spread * 0.6 + (rnd() - 0.5) * spread,
+  );
 
 const liveClock = () => new Date().toLocaleTimeString("en-GB", { hour12: false });
 
@@ -47,14 +59,10 @@ const clock = (offsetSeconds = 0) => {
   return d.toLocaleTimeString("en-GB", { hour12: false });
 };
 
-const rangeStatus = (v: number, warn: [number, number], crit: [number, number]): Status => {
-  if (v < crit[0] || v > crit[1]) return "crit";
-  if (v < warn[0] || v > warn[1]) return "warn";
-  return "ok";
+const pushHistory = (list: number[], v: number) => {
+  const next = [...list, v];
+  return next.length > 40 ? next.slice(next.length - 40) : next;
 };
-
-const worst = (list: Status[]): Status =>
-  list.includes("crit") ? "crit" : list.includes("warn") ? "warn" : "ok";
 
 const trendPoints = (base: number, spread: number, n = 40) => {
   const now = BASE_TIME;
@@ -67,301 +75,209 @@ const trendPoints = (base: number, spread: number, n = 40) => {
   }));
 };
 
-const ZONE_LAYOUT: Record<BodyZone["id"], { label: string; metrics: string[]; position: [number, number, number] }> = {
-  head: { label: "HEAD", metrics: ["Impact Sensor", "Temperature"], position: [0, 1.63, 0.11] },
-  upperBody: {
-    label: "UPPER BODY",
-    metrics: ["Heart Rate", "Respiration", "Posture"],
-    position: [0.0, 1.36, 0.15],
-  },
-  arms: { label: "ARMS", metrics: ["Motion", "Temperature"], position: [-0.46, 1.02, 0.05] },
-  core: { label: "CORE", metrics: ["Core Temp", "SpO2", "Hydration"], position: [0, 1.05, 0.16] },
-  legs: { label: "LEGS", metrics: ["Motion", "Load", "Fatigue"], position: [0.13, 0.52, 0.1] },
-};
-
-/** 3D anchors per sensor (metres, model space) so nodes stay attached to the body. */
-const SENSOR_POSITIONS: Record<string, [number, number, number]> = {
-  coreTemp: [0.0, 1.06, 0.17],
-  heartRate: [-0.07, 1.37, 0.16],
-  respiration: [0.09, 1.27, 0.17],
-  spo2: [0.19, 1.46, 0.07],
-  stress: [0.0, 1.64, 0.12],
-  hydration: [-0.16, 0.98, 0.15],
-  fatigue: [0.13, 0.52, 0.11],
-  motion: [-0.44, 1.02, 0.06],
-};
-
-const SENSOR_IDS: Record<string, string> = {
-  heartRate: "S1",
-  coreTemp: "S2",
-  spo2: "S3",
-  respiration: "S4",
-  motion: "S5",
-  stress: "S6",
-  hydration: "S7",
-  fatigue: "S8",
-};
-
-type HistoryKey =
-  | "heartRate"
-  | "bodyTemp"
-  | "spo2"
-  | "respiration"
-  | "stress"
-  | "hydration"
-  | "fatigue"
-  | "motion";
-
+/**
+ * Demo simulator for the Phase-1 rig — the SAME channels, names, units, zone
+ * placement and thresholds as the real ESP32 feed (the ESP32_CHANNELS registry),
+ * so the dashboard looks identical in DEMO and LIVE mode.
+ */
 interface MutableState {
-  heartRate: number;
-  bodyTemp: number;
-  spo2: number;
-  respiration: number;
-  stress: number;
-  hydration: number;
-  fatigue: number;
-  motion: number;
+  values: ChannelValues;
+  histories: Partial<Record<SensorKey, number[]>>;
+  meanTempHistory: number[];
+  headLatchUntil: number;
+  chestLatchUntil: number;
   battery: number;
   distance: number;
   calories: number;
   startedAt: number;
-  histories: Record<HistoryKey, number[]>;
-  alerts: AlertItem[];
-  trends: TrendSeries[];
+  live: boolean;
   gps: { lat: number; lng: number; alt: number };
   gpsUpdatedAt: string;
   trail: [number, number][];
-  /** Flips true after the first live tick so time-sensitive fields use real time. */
-  live: boolean;
+  alerts: AlertItem[];
+  trends: TrendSeries[];
 }
 
-function initialState(config: MannequinConfig): MutableState {
-  setSeed(config.seed);
-  const bias =
-    config.state === "crit"
-      ? { hr: 42, temp: 1.5, spo2: -7, stress: 45, fatigue: 55, hyd: -30 }
-      : config.state === "warn"
-        ? { hr: 22, temp: 0.9, spo2: -3, stress: 30, fatigue: 34, hyd: -20 }
-        : { hr: 0, temp: 0, spo2: 0, stress: 0, fatigue: 0, hyd: 0 };
-  const j = (n: number) => (rnd() - 0.5) * n;
+/** Per-mannequin bias so the M1–M5 demo profiles differ (ok / warn / crit / offline). */
+function channelBases(config: MannequinConfig): ChannelValues {
+  const tempBias = config.state === "crit" ? 1.5 : config.state === "warn" ? 0.9 : 0;
+  const gasBias = config.state === "crit" ? 320 : config.state === "warn" ? 160 : 0;
   return {
-    heartRate: 72 + bias.hr + j(8),
-    bodyTemp: 36.7 + bias.temp + j(0.3),
-    spo2: 98 + bias.spo2 + j(1),
-    respiration: 18 + bias.hr * 0.12 + j(2),
-    stress: 22 + bias.stress + j(8),
-    hydration: 81 + bias.hyd + j(6),
-    fatigue: 24 + bias.fatigue + j(8),
-    motion: config.state === "offline" ? 0 : 64 + j(14),
-    battery: config.battery,
-    gps: { lat: config.lat, lng: config.lng, alt: config.alt },
-    gpsUpdatedAt: clock(0),
-    trail: [[config.lat, config.lng]],
-    distance: 18.7,
-    calories: 2450,
-    live: false,
-    startedAt: Date.now() - 4 * 3600_000 - 35 * 60_000,
-    histories: {
-      heartRate: seedHistory(72, 6),
-      bodyTemp: seedHistory(36.7, 0.25),
-      spo2: seedHistory(98, 1),
-      respiration: seedHistory(18, 2),
-      stress: seedHistory(22, 8),
-      hydration: seedHistory(81, 6),
-      fatigue: seedHistory(24, 8),
-      motion: seedHistory(64, 12),
-    },
-    alerts: [
-      { id: "a1", time: clock(120), severity: "ok", message: "Hydration level nominal" },
-      { id: "a2", time: clock(320), severity: "ok", message: "All vitals within range" },
-      { id: "a3", time: clock(640), severity: "warn", message: "Stress level elevated briefly" },
-      { id: "a4", time: clock(1200), severity: "ok", message: "System self-check complete" },
-    ],
-    trends: [
-      { key: "heartRate", label: "Heart Rate", unit: "BPM", color: "var(--hud)", points: trendPoints(72, 5) },
-      { key: "coreTemp", label: "Core Body Temp", unit: "°C", color: "var(--ok)", points: trendPoints(36.8, 0.3) },
-      { key: "spo2", label: "Blood Oxygen", unit: "%", color: "var(--hud-dim)", points: trendPoints(97.5, 1) },
-      { key: "respiration", label: "Respiration", unit: "RPM", color: "var(--warn)", points: trendPoints(18, 1.6) },
-    ],
+    soundLeft: 44,
+    soundRight: 41,
+    gasAir: 430 + gasBias,
+    impactHead: 0,
+    impactChest: 0,
+    tempForehead: 36.6 + tempBias * 0.8,
+    tempChest: 36.8 + tempBias,
+    tempLeftArm: 36.4 + tempBias * 0.6,
+    tempRightArm: 36.5 + tempBias * 0.6,
   };
 }
 
-function pushHistory(list: number[], v: number) {
-  const next = [...list, v];
-  return next.length > 40 ? next.slice(next.length - 40) : next;
+const HISTORY_SPREADS: Record<string, number> = {
+  soundLeft: 5,
+  soundRight: 4,
+  gasAir: 45,
+  impactHead: 0,
+  impactChest: 0,
+  tempForehead: 0.2,
+  tempChest: 0.25,
+  tempLeftArm: 0.3,
+  tempRightArm: 0.3,
+};
+
+function initialState(config: MannequinConfig): MutableState {
+  setSeed(config.seed);
+  const offline = config.state === "offline";
+  const bases = channelBases(config);
+  const histories: Partial<Record<SensorKey, number[]>> = {};
+  if (!offline) {
+    for (const [key, base] of Object.entries(bases)) {
+      histories[key as SensorKey] = seedHistory(base as number, HISTORY_SPREADS[key] ?? 1);
+    }
+  }
+
+  const tempBias = config.state === "crit" ? 1.5 : config.state === "warn" ? 0.9 : 0;
+  const gasBias = config.state === "crit" ? 320 : config.state === "warn" ? 160 : 0;
+
+  return {
+    values: offline ? {} : bases,
+    histories,
+    meanTempHistory: offline ? [] : seedHistory(36.7 + tempBias, 0.25),
+    headLatchUntil: 0,
+    chestLatchUntil: 0,
+    battery: config.battery,
+    distance: 18.7,
+    calories: 2450,
+    startedAt: BASE_TIME - 4 * 3600_000 - 35 * 60_000,
+    live: false,
+    gps: { lat: config.lat, lng: config.lng, alt: config.alt },
+    gpsUpdatedAt: clock(0),
+    trail: [[config.lat, config.lng]],
+    alerts: offline
+      ? []
+      : [
+          {
+            id: "a1",
+            time: clock(120),
+            severity: "ok",
+            message: "Rig self-check complete — 9/9 sensors responding",
+          },
+          {
+            id: "a2",
+            time: clock(320),
+            severity: "ok",
+            message: "MQ-135 baseline captured in clean air",
+          },
+          {
+            id: "a3",
+            time: clock(640),
+            severity: "ok",
+            message: "All DS18B20 probes detected on the OneWire bus",
+          },
+          {
+            id: "a4",
+            time: clock(1200),
+            severity: "ok",
+            message: "MAX9814 gain stages calibrated",
+          },
+        ],
+    trends: offline
+      ? []
+      : [
+          {
+            key: "tempChest",
+            label: "Chest Temp (DS18B20)",
+            unit: "°C",
+            color: "var(--hud)",
+            points: trendPoints(36.8 + tempBias, 0.3),
+          },
+          {
+            key: "gasAir",
+            label: "Air Quality (MQ-135)",
+            unit: "ppm",
+            color: "var(--warn)",
+            points: trendPoints(430 + gasBias, 45),
+          },
+          {
+            key: "soundLeft",
+            label: "Acoustic L (MAX9814)",
+            unit: "dB",
+            color: "var(--ok)",
+            points: trendPoints(44, 5),
+          },
+          {
+            key: "soundRight",
+            label: "Acoustic R (MAX9814)",
+            unit: "dB",
+            color: "var(--hud-dim)",
+            points: trendPoints(41, 4),
+          },
+        ],
+  };
 }
 
 function buildSnapshot(s: MutableState, config: MannequinConfig): TelemetrySnapshot {
   const offline = config.state === "offline";
-  const st = (x: Status): Status => (offline ? "off" : x);
-  const hrStatus = st(rangeStatus(s.heartRate, [55, 100], [45, 130]));
-  const tempStatus = st(rangeStatus(s.bodyTemp, [36.1, 37.5], [35.5, 38.5]));
-  const spo2Status = st(rangeStatus(s.spo2, [95, 100], [90, 100]));
-  const respStatus = st(rangeStatus(s.respiration, [12, 22], [9, 28]));
-  const stressStatus = st(rangeStatus(s.stress, [0, 55], [0, 78]));
-  const hydrationStatus = st(rangeStatus(s.hydration, [60, 100], [45, 100]));
-  const fatigueStatus = st(rangeStatus(s.fatigue, [0, 55], [0, 80]));
+  const values: ChannelValues = offline ? {} : s.values;
 
-  const vitals: Vital[] = [
-    {
-      key: "heartRate",
-      label: "Heart Rate",
-      value: Math.round(s.heartRate),
-      unit: "BPM",
-      status: hrStatus,
-      history: s.histories.heartRate,
-    },
-    {
-      key: "bodyTemp",
-      label: "Body Temp",
-      value: Number(s.bodyTemp.toFixed(1)),
-      unit: "°C",
-      status: tempStatus,
-      history: s.histories.bodyTemp,
-    },
-    {
-      key: "spo2",
-      label: "SpO2",
-      value: Math.round(s.spo2),
-      unit: "%",
-      status: spo2Status,
-      history: s.histories.spo2,
-    },
-    {
-      key: "respiration",
-      label: "Respiration",
-      value: Math.round(s.respiration),
-      unit: "RPM",
-      status: respStatus,
-      history: s.histories.respiration,
-    },
-  ];
-
-  const level = (v: number) => (v < 35 ? "LOW" : v < 65 ? "MODERATE" : "HIGH");
-
-  const rawSensors: Omit<SensorReading, "sensorId" | "position">[] = [
-    {
-      key: "coreTemp",
-      label: "Core Body Temp",
-      value: Number(s.bodyTemp.toFixed(1)),
-      unit: "°C",
-      display: `${s.bodyTemp.toFixed(1)}°C`,
-      status: tempStatus,
-      history: s.histories.bodyTemp,
-      zone: "core",
-    },
-    {
-      key: "heartRate",
-      label: "Heart Rate",
-      value: Math.round(s.heartRate),
-      unit: "BPM",
-      display: `${Math.round(s.heartRate)} BPM`,
-      status: hrStatus,
-      history: s.histories.heartRate,
-      zone: "upperBody",
-    },
-    {
-      key: "respiration",
-      label: "Respiration",
-      value: Math.round(s.respiration),
-      unit: "RPM",
-      display: `${Math.round(s.respiration)} RPM`,
-      status: respStatus,
-      history: s.histories.respiration,
-      zone: "upperBody",
-    },
-    {
-      key: "spo2",
-      label: "Blood Oxygen",
-      value: Math.round(s.spo2),
-      unit: "%",
-      display: `${Math.round(s.spo2)}%`,
-      status: spo2Status,
-      history: s.histories.spo2,
-      zone: "core",
-    },
-    {
-      key: "stress",
-      label: "Stress Level",
-      value: Math.round(s.stress),
-      unit: "%",
-      display: level(s.stress),
-      status: stressStatus,
-      history: s.histories.stress,
-      zone: "head",
-    },
-    {
-      key: "hydration",
-      label: "Hydration",
-      value: Math.round(s.hydration),
-      unit: "%",
-      display: s.hydration > 70 ? "GOOD" : s.hydration > 55 ? "FAIR" : "LOW",
-      status: hydrationStatus,
-      history: s.histories.hydration,
-      zone: "core",
-    },
-    {
-      key: "fatigue",
-      label: "Fatigue Level",
-      value: Math.round(s.fatigue),
-      unit: "%",
-      display: level(s.fatigue),
-      status: fatigueStatus,
-      history: s.histories.fatigue,
-      zone: "legs",
-    },
-    {
-      key: "motion",
-      label: "Motion Status",
-      value: Math.round(s.motion),
-      unit: "%",
-      display: s.motion > 30 ? "ACTIVE" : "STATIONARY",
-      status: st("ok"),
-      history: s.histories.motion,
-      zone: "arms",
-    },
-  ];
-
-  const sensors: SensorReading[] = rawSensors.map((x) => ({
-    ...x,
-    sensorId: SENSOR_IDS[x.key] ?? x.key,
-    position: SENSOR_POSITIONS[x.key] ?? [0, 1, 0],
-  }));
-
-  const zones: BodyZone[] = (Object.keys(ZONE_LAYOUT) as BodyZone["id"][]).map((id) => {
-    const zoneSensors = sensors.filter((sensor) => sensor.zone === id);
+  const sensors: SensorReading[] = ESP32_CHANNELS.map((spec) => {
+    const v = values[spec.key] ?? null;
     return {
-      id,
-      label: ZONE_LAYOUT[id].label,
-      metrics: ZONE_LAYOUT[id].metrics,
-      sensors: zoneSensors.map((x) => x.key),
-      status: offline ? "off" : worst(zoneSensors.map((x) => x.status)),
-      position: ZONE_LAYOUT[id].position,
+      key: spec.key,
+      sensorId: spec.sensorId,
+      label: spec.label,
+      value: v ?? 0,
+      unit: spec.unit,
+      display: v == null ? "--" : formatChannelDisplay(spec, v),
+      status: v == null ? "off" : channelStatus(spec, v),
+      history: offline ? [] : (s.histories[spec.key] ?? []),
+      zone: spec.zone,
+      position: spec.position,
     };
   });
 
-  const elapsed = (s.live ? Date.now() : BASE_TIME) - (s.live ? s.startedAt : BASE_TIME - 4 * 3600_000 - 35 * 60_000);
+  const vitals = deriveRigVitals(values, {
+    bodyTemp: offline ? [] : s.meanTempHistory,
+    airQuality: offline ? [] : (s.histories.gasAir ?? []),
+    acoustic: offline ? [] : (s.histories.soundLeft ?? []),
+    impact: offline ? [] : (s.histories.impactChest ?? []),
+  });
+
+  const zones = rigZones(sensors);
+
+  const statuses: Partial<Record<SensorKey, Status>> = {};
+  for (const sensor of sensors) statuses[sensor.key] = sensor.status;
+
+  const equipment = rigEquipment(statuses, {
+    connected: !offline,
+    batteryPct: Math.round(s.battery),
+  });
+
+  const warnCount = sensors.filter((x) => x.status === "warn").length;
+  const critCount = sensors.filter((x) => x.status === "crit").length;
+  const performance = offline ? 0 : Math.round(clamp(100 - warnCount * 8 - critCount * 20, 40, 99));
+
+  const elapsed =
+    (s.live ? Date.now() : BASE_TIME) -
+    (s.live ? s.startedAt : BASE_TIME - 4 * 3600_000 - 35 * 60_000);
   const hh = String(Math.floor(elapsed / 3600_000)).padStart(2, "0");
   const mm = String(Math.floor((elapsed % 3600_000) / 60_000)).padStart(2, "0");
   const ss = String(Math.floor((elapsed % 60_000) / 1000)).padStart(2, "0");
 
-  const performance = Math.round(
-    clamp(100 - (s.fatigue * 0.25 + s.stress * 0.2 + Math.abs(s.heartRate - 72) * 0.3), 40, 99),
-  );
-
-  const fmt = (v: number, d = 4) => v.toFixed(d);
-  const gps: GpsFix = {
-    lat: s.gps.lat,
-    lng: s.gps.lng,
-    alt: s.gps.alt,
-    updatedAt: s.gpsUpdatedAt,
-    connected: !offline,
-  };
+  const activeChannels = sensors.filter((x) => x.status !== "off").length;
 
   return {
     mannequinId: config.id,
     mannequinLabel: config.label,
-    gps,
+    gps: {
+      lat: s.gps.lat,
+      lng: s.gps.lng,
+      alt: s.gps.alt,
+      updatedAt: s.gpsUpdatedAt,
+      connected: !offline,
+    },
     trail: s.trail,
     soldier: {
       id: config.label,
@@ -375,19 +291,12 @@ function buildSnapshot(s: MutableState, config: MannequinConfig): TelemetrySnaps
     vitals,
     sensors,
     zones,
-    equipment: [
-      { id: "helmet", label: "Helmet", state: "OK" },
-      { id: "vest", label: "Vest", state: "OK" },
-      { id: "weapon", label: "Weapon System", state: "OK" },
-      { id: "comms", label: "Communication", state: s.battery < 20 ? "WARNING" : "OK" },
-      { id: "gps", label: "GPS Module", state: "OK" },
-      { id: "power", label: "Power Pack", state: s.battery < 25 ? "WARNING" : "OK", battery: Math.round(s.battery) },
-    ],
+    equipment,
     alerts: s.alerts,
     location: {
       location: config.sector,
-      latitude: `${fmt(s.gps.lat)}° N`,
-      longitude: `${fmt(s.gps.lng)}° E`,
+      latitude: `${s.gps.lat.toFixed(4)}° N`,
+      longitude: `${s.gps.lng.toFixed(4)}° E`,
       altitude: `${Math.round(s.gps.alt).toLocaleString("en-US")} m`,
       ambientTemp: "-5 °C",
       humidity: "38 %",
@@ -403,8 +312,8 @@ function buildSnapshot(s: MutableState, config: MannequinConfig): TelemetrySnaps
     },
     system: {
       connection: offline ? "OFFLINE" : config.state === "crit" ? "WARNING" : "CONNECTED",
-      sensorsActive: offline ? 0 : 14,
-      sensorsTotal: 14,
+      sensorsActive: offline ? 0 : activeChannels,
+      sensorsTotal: ESP32_SENSOR_TOTAL,
       battery: Math.round(s.battery),
       network: offline ? "LOST" : config.state === "crit" ? "DEGRADED" : "SECURE",
       lastSync: offline ? s.gpsUpdatedAt : s.live ? liveClock() : clock(0),
@@ -432,64 +341,84 @@ export function createMockTelemetrySource(
     // GPS drift — small steps so markers animate instead of teleporting.
     state.gps.lat += (Math.random() - 0.5) * 0.00035;
     state.gps.lng += (Math.random() - 0.5) * 0.00035;
-    state.gps.alt = clamp(state.gps.alt + (Math.random() - 0.5) * 3, config.alt - 60, config.alt + 60);
+    state.gps.alt = clamp(
+      state.gps.alt + (Math.random() - 0.5) * 3,
+      config.alt - 60,
+      config.alt + 60,
+    );
     state.gpsUpdatedAt = liveClock();
     state.trail = [...state.trail, [state.gps.lat, state.gps.lng] as [number, number]].slice(-25);
 
-    state.heartRate = drift(state.heartRate, 5, 58, 118);
-    state.bodyTemp = drift(state.bodyTemp, 0.14, 36.0, 38.2);
-    state.spo2 = drift(state.spo2, 0.9, 92, 100);
-    state.respiration = drift(state.respiration, 1.4, 11, 26);
-    state.stress = drift(state.stress, 6, 5, 85);
-    state.hydration = drift(state.hydration, 2.5, 45, 98);
-    state.fatigue = clamp(state.fatigue + Math.random() * 0.5 - 0.15, 5, 92);
-    state.motion = drift(state.motion, 18, 0, 100);
-    state.battery = clamp(state.battery - 0.01, 5, 100);
-    state.distance += 0.005;
-    state.calories += 0.6;
+    // Phase-1 rig channels — the same registry the live ESP32 source parses.
+    const v = state.values;
+    v.soundLeft = drift(v.soundLeft ?? 44, 6, 30, 105);
+    v.soundRight = drift(v.soundRight ?? 41, 6, 30, 105);
+    v.gasAir = drift(v.gasAir ?? 430, 40, 350, 1150);
+    v.tempForehead = drift(v.tempForehead ?? 36.6, 0.15, 35.2, 39.0);
+    v.tempChest = drift(v.tempChest ?? 36.8, 0.15, 35.2, 39.0);
+    v.tempLeftArm = drift(v.tempLeftArm ?? 36.4, 0.2, 35.2, 39.0);
+    v.tempRightArm = drift(v.tempRightArm ?? 36.5, 0.2, 35.2, 39.0);
+    if (Math.random() < 0.03) state.headLatchUntil = Date.now() + 4000;
+    if (Math.random() < 0.03) state.chestLatchUntil = Date.now() + 4000;
+    v.impactHead = Date.now() < state.headLatchUntil ? 1 : 0;
+    v.impactChest = Date.now() < state.chestLatchUntil ? 1 : 0;
 
-    state.histories.heartRate = pushHistory(state.histories.heartRate, state.heartRate);
-    state.histories.bodyTemp = pushHistory(state.histories.bodyTemp, state.bodyTemp);
-    state.histories.spo2 = pushHistory(state.histories.spo2, state.spo2);
-    state.histories.respiration = pushHistory(state.histories.respiration, state.respiration);
-    state.histories.stress = pushHistory(state.histories.stress, state.stress);
-    state.histories.hydration = pushHistory(state.histories.hydration, state.hydration);
-    state.histories.fatigue = pushHistory(state.histories.fatigue, state.fatigue);
-    state.histories.motion = pushHistory(state.histories.motion, state.motion);
+    state.histories.soundLeft = pushHistory(state.histories.soundLeft ?? [], v.soundLeft!);
+    state.histories.soundRight = pushHistory(state.histories.soundRight ?? [], v.soundRight!);
+    state.histories.gasAir = pushHistory(state.histories.gasAir ?? [], v.gasAir!);
+    state.histories.tempForehead = pushHistory(state.histories.tempForehead ?? [], v.tempForehead!);
+    state.histories.tempChest = pushHistory(state.histories.tempChest ?? [], v.tempChest!);
+    state.histories.tempLeftArm = pushHistory(state.histories.tempLeftArm ?? [], v.tempLeftArm!);
+    state.histories.tempRightArm = pushHistory(state.histories.tempRightArm ?? [], v.tempRightArm!);
+    state.histories.impactHead = pushHistory(state.histories.impactHead ?? [], v.impactHead!);
+    state.histories.impactChest = pushHistory(state.histories.impactChest ?? [], v.impactChest!);
+
+    const temps = [v.tempForehead, v.tempChest, v.tempLeftArm, v.tempRightArm].filter(
+      (n): n is number => n != null,
+    );
+    if (temps.length) {
+      state.meanTempHistory = pushHistory(
+        state.meanTempHistory,
+        temps.reduce((a, b) => a + b, 0) / temps.length,
+      );
+    }
 
     const label = new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
-    const map: Record<string, number | undefined> = {
-      heartRate: state.heartRate,
-      coreTemp: state.bodyTemp,
-      spo2: state.spo2,
-      respiration: state.respiration,
+    const trendMap: Record<string, number> = {
+      tempChest: v.tempChest ?? 0,
+      gasAir: v.gasAir ?? 0,
+      soundLeft: v.soundLeft ?? 0,
+      soundRight: v.soundRight ?? 0,
     };
     state.trends = state.trends.map((series) => ({
       ...series,
-      points: [...series.points, { t: label, v: Number((map[series.key] ?? 0).toFixed(1)) }].slice(-60),
+      points: [
+        ...series.points,
+        { t: label, v: Number((trendMap[series.key] ?? 0).toFixed(1)) },
+      ].slice(-60),
     }));
 
-    // Alert engine — derived from thresholds, never hard-coded in the UI.
-    const candidates: { key: string; severity: Status; message: string }[] = [];
-    if (state.bodyTemp > 37.8) candidates.push({ key: "temp", severity: "warn", message: "Core temperature rising" });
-    if (state.heartRate > 110) candidates.push({ key: "hr", severity: "crit", message: "Heart rate critically high" });
-    if (state.spo2 < 94) candidates.push({ key: "spo2", severity: "crit", message: "Blood oxygen below threshold" });
-    if (state.fatigue > 75) candidates.push({ key: "fatigue", severity: "warn", message: "High fatigue detected" });
-    if (state.hydration < 55) candidates.push({ key: "hyd", severity: "warn", message: "Hydration level dropping" });
-    if (state.battery < 20) candidates.push({ key: "bat", severity: "warn", message: "Power pack battery low" });
-
-    for (const c of candidates) {
-      const recent = state.alerts.find((a) => a.id.startsWith(c.key));
+    // Alert engine — shared threshold logic with the live ESP32 source.
+    for (const c of channelAlertCandidates(v)) {
+      const recent = state.alerts.find((a) => a.id.startsWith(`${c.key}-`));
       if (!recent || Date.now() - Number(recent.id.split("-")[1] ?? 0) > 30_000) {
         state.alerts = [
-          { id: `${c.key}-${Date.now()}`, time: liveClock(), severity: c.severity, message: c.message },
+          {
+            id: `${c.key}-${Date.now()}`,
+            time: liveClock(),
+            severity: c.severity,
+            message: c.message,
+          },
           ...state.alerts,
         ].slice(0, 12);
       }
     }
 
-    const snapshot = buildSnapshot(state, config);
-    listeners.forEach((l) => l(snapshot));
+    state.battery = clamp(state.battery - 0.01, 5, 100);
+    state.distance += 0.005;
+    state.calories += 0.6;
+
+    listeners.forEach((l) => l(buildSnapshot(state, config)));
   };
 
   return {

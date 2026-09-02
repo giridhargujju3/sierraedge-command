@@ -1,5 +1,6 @@
 import {
   Activity,
+  AudioLines,
   Brain,
   Droplet,
   Droplets,
@@ -8,6 +9,7 @@ import {
   PersonStanding,
   Thermometer,
   Wind,
+  Zap,
 } from "lucide-react";
 import type { ComponentType } from "react";
 import { HudPanel } from "./HudPanel";
@@ -26,6 +28,16 @@ export const SENSOR_ICONS: Record<SensorKey, ComponentType<{ className?: string 
   hydration: Droplet,
   fatigue: Gauge,
   motion: PersonStanding,
+  /* SierraEdge ESP32 rig channels */
+  soundLeft: AudioLines,
+  soundRight: AudioLines,
+  gasAir: Wind,
+  impactHead: Zap,
+  impactChest: Zap,
+  tempForehead: Thermometer,
+  tempChest: Thermometer,
+  tempLeftArm: Thermometer,
+  tempRightArm: Thermometer,
 };
 
 export function SensorRow({
@@ -66,7 +78,8 @@ export function SensorDataPanel({
 }) {
   const { sensors } = useTelemetry();
   const { selectedSensor, setSelectedSensor } = useFleet();
-  const handleSelect = onSelect ?? ((key: SensorKey) => setSelectedSensor(selectedSensor === key ? null : key));
+  const handleSelect =
+    onSelect ?? ((key: SensorKey) => setSelectedSensor(selectedSensor === key ? null : key));
   const active = activeKey === undefined ? selectedSensor : activeKey;
   return (
     <HudPanel title="Sensor Data" bodyClassName="p-2 space-y-1.5">

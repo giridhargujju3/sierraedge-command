@@ -11,7 +11,7 @@ export interface Soldier {
 }
 
 export interface Vital {
-  key: "heartRate" | "bodyTemp" | "spo2" | "respiration";
+  key: "bodyTemp" | "airQuality" | "acoustic" | "impact";
   label: string;
   value: number;
   unit: string;
@@ -27,7 +27,17 @@ export type SensorKey =
   | "stress"
   | "hydration"
   | "fatigue"
-  | "motion";
+  | "motion"
+  /** SierraEdge ESP32 rig channels — live hardware feed from the mannequin. */
+  | "soundLeft"
+  | "soundRight"
+  | "gasAir"
+  | "impactHead"
+  | "impactChest"
+  | "tempForehead"
+  | "tempChest"
+  | "tempLeftArm"
+  | "tempRightArm";
 
 export interface SensorReading {
   key: SensorKey;
