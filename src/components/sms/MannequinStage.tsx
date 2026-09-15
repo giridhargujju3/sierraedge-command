@@ -58,8 +58,8 @@ class ThreeErrorBoundary extends Component<
  * matching their node's body side (model-space +x → right edge); centre-line
  * nodes alternate L/R so both stacks stay balanced. Width is measured live. */
 const CALLOUT_X_SPLIT = 0.04; // model-space |x| beyond which a node locks to an edge
-const EDGE_INSET = 14;
-const BEND_X = 30; // horizontal elbow run before slanting down/up to the node
+const EDGE_INSET = 22;
+const BEND_X = 18; // horizontal elbow run before slanting down/up to the node
 const GAP_Y = 10; // min vertical gap while collision-stacking boxes
 const INSET_TOP = 56; // keep clear of the DIGITAL TWIN / AUTO / RESET chrome
 const INSET_BOTTOM = 88; // keep clear of the zoomed-in zone detail card
@@ -112,7 +112,7 @@ const writeSavedCameraView = (v: CameraView): void => {
   }
 };
 
-/** Splits a sensor label "MAX9814 Acoustic — Right Ear" into name + location. */
+/** Splits a sensor label "Acoustic — Right Ear" into name + location. */
 const labelParts = (label: string): { head: string; tail?: string } => {
   const [head, tail] = label.split("—").map((p) => p.trim());
   return tail ? { head: head ?? label, tail } : { head: head ?? label };
@@ -403,18 +403,6 @@ export function MannequinStage() {
         </button>
         <button
           type="button"
-          onClick={saveView}
-          title="Save the current 3D view — restored when you return to the dashboard"
-          className={cn(
-            "hud-micro rounded border px-2 py-1 transition-colors",
-            viewSaved ? "border-ok text-ok" : "border-panel-edge hover:text-primary",
-          )}
-        >
-          {viewSaved ? <Check className="inline size-3" /> : <Save className="inline size-3" />}
-          {viewSaved ? " SAVED" : " SAVE VIEW"}
-        </button>
-        <button
-          type="button"
           onClick={() => toggleDataOverlay(!dataOverlay)}
           aria-pressed={dataOverlay}
           title={dataOverlay ? "Hide sensor callout boxes" : "Show sensor callout boxes"}
@@ -461,6 +449,18 @@ export function MannequinStage() {
 
       {/* Vertical pan — drag up/down while zoomed; docked bottom-right inside the stage */}
       <div className="absolute right-3 bottom-3 z-20 flex touch-none flex-col gap-1">
+        <button
+          type="button"
+          onClick={saveView}
+          aria-label="Save 3D view"
+          title="Save this 3D view — restored when you come back"
+          className={cn(
+            "rounded border bg-popover/85 p-1.5 backdrop-blur transition-colors hover:border-primary hover:text-primary",
+            viewSaved ? "border-ok text-ok" : "border-panel-edge",
+          )}
+        >
+          {viewSaved ? <Check className="block size-3.5" /> : <Save className="block size-3.5" />}
+        </button>
         {([-1, 1] as const).map((dir) => (
           <button
             key={dir}
@@ -538,7 +538,7 @@ export function MannequinStage() {
                 }
                 onClick={() => setSelectedSensor(active ? null : s.key)}
                 className={cn(
-                  "pointer-events-auto absolute top-0 w-[168px] cursor-pointer rounded-md border bg-popover/85 px-2 py-1.5 text-left backdrop-blur sm:w-[200px]",
+                  "pointer-events-auto absolute top-0 w-[186px] cursor-pointer rounded-md border bg-popover/85 px-2.5 py-2 text-left backdrop-blur sm:w-[236px]",
                   "opacity-0 transition-[transform,opacity,border-color] duration-150 ease-out will-change-transform",
                   active
                     ? "border-primary shadow-[var(--glow-hud)]"
@@ -551,7 +551,7 @@ export function MannequinStage() {
                       className="size-1.5 shrink-0 rounded-full"
                       style={{ background: hex, boxShadow: `0 0 4px ${hex}` }}
                     />
-                    <span className="hud-label truncate text-[0.63rem]">{head}</span>
+                    <span className="hud-label truncate text-[0.7rem]">{head}</span>
                   </span>
                   <span className={cn("hud-micro shrink-0", statusText[s.status])}>
                     {statusLabel[s.status]}
@@ -565,7 +565,7 @@ export function MannequinStage() {
                   ) : (
                     <span className="flex-1" />
                   )}
-                  <span className={cn("hud-value shrink-0 text-[0.72rem]", statusText[s.status])}>
+                  <span className={cn("hud-value shrink-0 text-[0.8rem]", statusText[s.status])}>
                     {s.display}
                   </span>
                 </div>

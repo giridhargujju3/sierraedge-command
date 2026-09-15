@@ -15,7 +15,6 @@ import { TelemetryProvider } from "../lib/sms/TelemetryProvider";
 import { TopBar } from "../components/sms/TopBar";
 import { BottomNav } from "../components/sms/BottomNav";
 
-
 function NotFoundComponent() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
@@ -138,15 +137,13 @@ function RootComponent() {
       <TelemetryProvider>
         <div className="flex h-screen flex-col overflow-hidden">
           <TopBar />
-          <main className="min-h-0 flex-1 overflow-y-auto px-2 py-2 scroll-thin xl:overflow-hidden">
+          <main className="min-h-0 flex-1 overflow-y-auto px-2 py-2 scroll-thin">
             {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
             <Outlet />
           </main>
           <BottomNav />
         </div>
       </TelemetryProvider>
-
     </QueryClientProvider>
   );
 }
-

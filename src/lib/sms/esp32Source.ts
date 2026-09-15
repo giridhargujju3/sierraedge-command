@@ -301,10 +301,10 @@ export function createEsp32TelemetrySource(opts: {
     };
 
     const trendSpecs = [
-      { key: "tempChest", label: "Chest Temp (DS18B20)", unit: "°C", color: "var(--hud)" },
-      { key: "gasAir", label: "Air Quality (MQ-135)", unit: "ppm", color: "var(--warn)" },
-      { key: "soundLeft", label: "Acoustic L (MAX9814)", unit: "dB", color: "var(--ok)" },
-      { key: "soundRight", label: "Acoustic R (MAX9814)", unit: "dB", color: "var(--hud-dim)" },
+      { key: "tempChest", label: "Chest Temperature", unit: "°C", color: "var(--hud)" },
+      { key: "gasAir", label: "CO (Carbon Monoxide)", unit: "ppm", color: "var(--warn)" },
+      { key: "soundLeft", label: "Acoustic L", unit: "dB", color: "var(--ok)" },
+      { key: "soundRight", label: "Acoustic R", unit: "dB", color: "var(--hud-dim)" },
     ] as const;
 
     const trends: TrendSeries[] = trendSpecs.map((t) => ({
@@ -321,12 +321,12 @@ export function createEsp32TelemetrySource(opts: {
       gps,
       trail: [[config.lat, config.lng]],
       soldier: {
-        id: config.id,
+        id: config.label,
         name: config.name,
         rank: config.rank,
         unit: config.unit,
         mission: config.mission,
-        status: live ? "LIVE FEED" : awaiting ? "STANDBY" : "LINK DOWN",
+        status: live ? "ACTIVE" : awaiting ? "STANDBY" : "LINK DOWN",
         avatarUrl: "",
       },
       vitals,

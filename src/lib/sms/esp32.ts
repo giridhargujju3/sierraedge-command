@@ -68,7 +68,18 @@ export interface ChannelSpec {
   position: [number, number, number];
   /** warn/crit window; undefined ⇒ always ok (impact channels use kind instead). */
   thresholds?: ChannelThresholds;
+  /** Optional value normalizer (e.g. raw ADC counts → dB SPL estimate). */
+  transform?: (v: number) => number;
 }
+
+/**
+ * MAX9814 boards that report raw ADC counts / millivolts (≫140) instead of
+ * calibrated dB SPL are converted to a dB SPL estimate (20·log10 of amplitude
+ * + offset). Values already in a plausible dB SPL range (≤140) pass through
+ * untouched — so calibrated firmware needs no change.
+ */
+const toDbSPL = (v: number): number =>
+  v > 140 ? Math.min(120, Math.max(0, 20 * Math.log10(v) + 8)) : v;
 
 /** The 9 physical sensors of the Phase-1 rig (2 mic + 1 gas + 2 impact + 4 temp). */
 export const ESP32_CHANNELS: ChannelSpec[] = [
@@ -76,31 +87,33 @@ export const ESP32_CHANNELS: ChannelSpec[] = [
     key: "soundLeft",
     field: "sound_left_db",
     sensorId: "S1",
-    label: "MAX9814 Acoustic — Left Ear",
+    label: "Acoustic — Left Ear",
     unit: " dB",
     kind: "analog",
     decimals: 0,
     zone: "head",
     position: [-0.13, 1.62, 0.02],
     thresholds: { warn: [0, 80], crit: [0, 100] },
+    transform: toDbSPL,
   },
   {
     key: "soundRight",
     field: "sound_right_db",
     sensorId: "S2",
-    label: "MAX9814 Acoustic — Right Ear",
+    label: "Acoustic — Right Ear",
     unit: " dB",
     kind: "analog",
     decimals: 0,
     zone: "head",
     position: [0.13, 1.62, 0.02],
     thresholds: { warn: [0, 80], crit: [0, 100] },
+    transform: toDbSPL,
   },
   {
     key: "gasAir",
     field: "gas_ppm",
     sensorId: "S3",
-    label: "MQ-135 Gas — Nose Area",
+    label: "CO (Carbon Monoxide) — Nose Area",
     unit: " ppm",
     kind: "analog",
     decimals: 0,
@@ -112,7 +125,7 @@ export const ESP32_CHANNELS: ChannelSpec[] = [
     key: "impactHead",
     field: "impact_forehead",
     sensorId: "S4",
-    label: "SW-420 Impact — Forehead",
+    label: "Shock — Forehead",
     unit: "",
     kind: "impact",
     decimals: 0,
@@ -123,7 +136,7 @@ export const ESP32_CHANNELS: ChannelSpec[] = [
     key: "impactChest",
     field: "impact_chest",
     sensorId: "S5",
-    label: "SW-420 Impact — Chest",
+    label: "Shock — Chest",
     unit: "",
     kind: "impact",
     decimals: 0,
@@ -134,49 +147,51 @@ export const ESP32_CHANNELS: ChannelSpec[] = [
     key: "tempForehead",
     field: "temp_forehead_c",
     sensorId: "S6",
-    label: "DS18B20 Temp — Forehead",
+    label: "Temperature — Forehead",
     unit: "°C",
     kind: "analog",
     decimals: 1,
     zone: "head",
     position: [0, 1.7, 0.1],
-    thresholds: { warn: [36.1, 37.5], crit: [35.0, 38.5] },
+    /* Phase-1 rig: DS18B20s read ambient until body heating is fitted —
+     * the OK window is widened so room temp classifies as "warn", not "crit". */
+    thresholds: { warn: [32.0, 38.5], crit: [28.0, 40.5] },
   },
   {
     key: "tempChest",
     field: "temp_chest_c",
     sensorId: "S7",
-    label: "DS18B20 Temp — Chest",
+    label: "Temperature — Chest",
     unit: "°C",
     kind: "analog",
     decimals: 1,
     zone: "upperBody",
     position: [0.04, 1.29, 0.17],
-    thresholds: { warn: [36.1, 37.5], crit: [35.0, 38.5] },
+    thresholds: { warn: [32.0, 38.5], crit: [28.0, 40.5] },
   },
   {
     key: "tempLeftArm",
     field: "temp_left_arm_c",
     sensorId: "S8",
-    label: "DS18B20 Temp — Left Arm",
+    label: "Temperature — Left Arm",
     unit: "°C",
     kind: "analog",
     decimals: 1,
     zone: "arms",
     position: [-0.45, 1.03, 0.06],
-    thresholds: { warn: [36.1, 37.5], crit: [35.0, 38.5] },
+    thresholds: { warn: [32.0, 38.5], crit: [28.0, 40.5] },
   },
   {
     key: "tempRightArm",
     field: "temp_right_arm_c",
     sensorId: "S9",
-    label: "DS18B20 Temp — Right Arm",
+    label: "Temperature — Right Arm",
     unit: "°C",
     kind: "analog",
     decimals: 1,
     zone: "arms",
     position: [0.45, 1.03, 0.06],
-    thresholds: { warn: [36.1, 37.5], crit: [35.0, 38.5] },
+    thresholds: { warn: [32.0, 38.5], crit: [28.0, 40.5] },
   },
 ];
 
@@ -193,21 +208,21 @@ export const ESP32_ZONES: {
   {
     id: "head",
     label: "HEAD",
-    metrics: ["Acoustic (MAX9814)", "Gas (MQ-135)", "Impact (SW-420)", "Temp (DS18B20)"],
+    metrics: ["Acoustic", "CO (Carbon Monoxide)", "Shock", "Temperature"],
     sensors: ["soundLeft", "soundRight", "gasAir", "impactHead", "tempForehead"],
     position: [0, 1.63, 0.11],
   },
   {
     id: "upperBody",
     label: "UPPER BODY",
-    metrics: ["Impact (SW-420)", "Temp (DS18B20)"],
+    metrics: ["Shock", "Temperature"],
     sensors: ["impactChest", "tempChest"],
     position: [0, 1.36, 0.15],
   },
   {
     id: "arms",
     label: "ARMS",
-    metrics: ["Temp (DS18B20) — L/R"],
+    metrics: ["Temperature — L/R"],
     sensors: ["tempLeftArm", "tempRightArm"],
     position: [-0.46, 1.02, 0.05],
   },
@@ -264,7 +279,9 @@ export function extractChannelValues(packet: Esp32Packet): ChannelValues {
   const record = packet as Record<string, unknown>;
   for (const spec of ESP32_CHANNELS) {
     const raw = record[spec.field];
-    if (typeof raw === "number" && Number.isFinite(raw)) out[spec.key] = raw;
+    if (typeof raw === "number" && Number.isFinite(raw)) {
+      out[spec.key] = spec.transform ? spec.transform(raw) : raw;
+    }
   }
   return out;
 }
@@ -372,7 +389,7 @@ export function deriveRigVitals(
   return [
     {
       key: "bodyTemp",
-      label: "Body Temp (DS18B20 ×4)",
+      label: "Body Temperature",
       value: meanTemp == null ? 0 : Number(meanTemp.toFixed(1)),
       unit: "°C",
       status: meanTemp == null ? "off" : channelStatus(tempSpec, meanTemp),
@@ -380,7 +397,7 @@ export function deriveRigVitals(
     },
     {
       key: "airQuality",
-      label: "Air Quality (MQ-135)",
+      label: "CO (Carbon Monoxide)",
       value: gas == null ? 0 : Math.round(gas),
       unit: "ppm",
       status: gas == null ? "off" : channelStatus(gasSpec, gas),
@@ -388,7 +405,7 @@ export function deriveRigVitals(
     },
     {
       key: "acoustic",
-      label: "Acoustic (MAX9814)",
+      label: "Acoustic",
       value: acoustic == null ? 0 : Math.round(acoustic),
       unit: "dB",
       status: acoustic == null ? "off" : channelStatus(soundSpec, acoustic),
@@ -396,7 +413,7 @@ export function deriveRigVitals(
     },
     {
       key: "impact",
-      label: "Impact (SW-420 ×2)",
+      label: "Shock",
       value: impact ?? 0,
       unit: "",
       status: impact == null ? "off" : impact >= 1 ? "warn" : "ok",
@@ -426,14 +443,14 @@ export function rigEquipment(
   return [
     {
       id: "acoustic",
-      label: "Acoustic — MAX9814 ×2",
+      label: "Acoustic — Mic ×2",
       state: groupState(["soundLeft", "soundRight"]),
     },
-    { id: "gas", label: "Gas Exposure — MQ-135", state: groupState(["gasAir"]) },
-    { id: "impact", label: "Impact — SW-420 ×2", state: groupState(["impactHead", "impactChest"]) },
+    { id: "gas", label: "CO — Carbon Monoxide", state: groupState(["gasAir"]) },
+    { id: "impact", label: "Shock — Impact ×2", state: groupState(["impactHead", "impactChest"]) },
     {
       id: "temp",
-      label: "Body Temp — DS18B20 ×4",
+      label: "Body Temperature — ×4",
       state: groupState(["tempForehead", "tempChest", "tempLeftArm", "tempRightArm"]),
     },
     {

@@ -1,14 +1,12 @@
-import { Radio, ShieldCheck, Volume2, VolumeX } from "lucide-react";
+import { Radio, ShieldCheck } from "lucide-react";
 import { ClientTime } from "./ClientTime";
 import { StatusDot } from "./HudPanel";
-import { useEsp32Link, useFleet, useTelemetry } from "@/lib/sms/TelemetryProvider";
-import { primeAudioOnGesture } from "@/lib/sms/alertHorn";
+import { useEsp32Link, useTelemetry } from "@/lib/sms/TelemetryProvider";
 import { cn } from "@/lib/utils";
 
 export function TopBar() {
   const { system, alerts } = useTelemetry();
   const esp32 = useEsp32Link();
-  const { alertSirenMuted, setAlertSirenMuted } = useFleet();
   const critical = alerts.some((a) => a.severity === "crit");
   const tone = system.connection === "OFFLINE" ? "crit" : critical ? "warn" : "ok";
   const label =
@@ -50,27 +48,6 @@ export function TopBar() {
           <ShieldCheck className="size-3.5 text-primary" /> LAST SYNC{" "}
           <ClientTime value={system.lastSync} />
         </span>
-        <button
-          type="button"
-          onClick={() => {
-            primeAudioOnGesture();
-            setAlertSirenMuted(!alertSirenMuted);
-          }}
-          title={
-            alertSirenMuted
-              ? "Critical siren is muted — click to arm the siren"
-              : "Critical siren is armed — click to mute"
-          }
-          className={cn(
-            "hud-micro flex items-center gap-1.5 rounded border px-2 py-1 transition-colors",
-            alertSirenMuted
-              ? "border-panel-edge text-muted-foreground hover:text-primary"
-              : "border-primary/70 text-primary",
-          )}
-        >
-          {alertSirenMuted ? <VolumeX className="size-3.5" /> : <Volume2 className="size-3.5" />}
-          {alertSirenMuted ? "SIREN OFF" : "SIREN ARMED"}
-        </button>
       </div>
     </header>
   );
