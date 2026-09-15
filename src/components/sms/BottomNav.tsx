@@ -1,5 +1,6 @@
 import { Link } from "@tanstack/react-router";
-import { BarChart3, FileText, Gauge, History, LayoutDashboard, Settings } from "lucide-react";
+import { BarChart3, FileText, Gauge, History, LayoutDashboard, Settings, Users } from "lucide-react";
+import { useAuth } from "@/lib/auth";
 
 const ITEMS = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -7,13 +8,18 @@ const ITEMS = [
   { to: "/sensor-analytics", label: "Sensor Analytics", icon: BarChart3 },
   { to: "/history", label: "History", icon: History },
   { to: "/reports", label: "Reports", icon: FileText },
+  { to: "/users", label: "Users", icon: Users, adminOnly: true },
   { to: "/settings", label: "Settings", icon: Settings },
 ] as const;
 
 export function BottomNav() {
+  const { user } = useAuth();
+
+  const visibleItems = ITEMS.filter((item) => !item.adminOnly || user?.role === "admin");
+
   return (
     <nav className="hud-panel z-30 mx-2 mb-2 shrink-0 flex items-center justify-between gap-1 overflow-x-auto px-2 py-1.5 scroll-thin">
-      {ITEMS.map(({ to, label, icon: Icon }) => (
+      {visibleItems.map(({ to, label, icon: Icon }) => (
         <Link
           key={to}
           to={to}

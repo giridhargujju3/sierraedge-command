@@ -12,9 +12,11 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as HistoryRouteImport } from './routes/history'
 import { Route as LiveMonitorRouteImport } from './routes/live-monitor'
+import { Route as LoginRouteImport } from './routes/login'
 import { Route as ReportsRouteImport } from './routes/reports'
 import { Route as SensorAnalyticsRouteImport } from './routes/sensor-analytics'
 import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as UsersRouteImport } from './routes/users'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -29,6 +31,11 @@ const HistoryRoute = HistoryRouteImport.update({
 const LiveMonitorRoute = LiveMonitorRouteImport.update({
   id: '/live-monitor',
   path: '/live-monitor',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ReportsRoute = ReportsRouteImport.update({
@@ -46,31 +53,42 @@ const SettingsRoute = SettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => rootRouteImport,
 } as any)
+const UsersRoute = UsersRouteImport.update({
+  id: '/users',
+  path: '/users',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/history': typeof HistoryRoute
   '/live-monitor': typeof LiveMonitorRoute
+  '/login': typeof LoginRoute
   '/reports': typeof ReportsRoute
   '/sensor-analytics': typeof SensorAnalyticsRoute
   '/settings': typeof SettingsRoute
+  '/users': typeof UsersRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/history': typeof HistoryRoute
   '/live-monitor': typeof LiveMonitorRoute
+  '/login': typeof LoginRoute
   '/reports': typeof ReportsRoute
   '/sensor-analytics': typeof SensorAnalyticsRoute
   '/settings': typeof SettingsRoute
+  '/users': typeof UsersRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/history': typeof HistoryRoute
   '/live-monitor': typeof LiveMonitorRoute
+  '/login': typeof LoginRoute
   '/reports': typeof ReportsRoute
   '/sensor-analytics': typeof SensorAnalyticsRoute
   '/settings': typeof SettingsRoute
+  '/users': typeof UsersRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -78,34 +96,42 @@ export interface FileRouteTypes {
     | '/'
     | '/history'
     | '/live-monitor'
+    | '/login'
     | '/reports'
     | '/sensor-analytics'
     | '/settings'
+    | '/users'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/history'
     | '/live-monitor'
+    | '/login'
     | '/reports'
     | '/sensor-analytics'
     | '/settings'
+    | '/users'
   id:
     | '__root__'
     | '/'
     | '/history'
     | '/live-monitor'
+    | '/login'
     | '/reports'
     | '/sensor-analytics'
     | '/settings'
+    | '/users'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   HistoryRoute: typeof HistoryRoute
   LiveMonitorRoute: typeof LiveMonitorRoute
+  LoginRoute: typeof LoginRoute
   ReportsRoute: typeof ReportsRoute
   SensorAnalyticsRoute: typeof SensorAnalyticsRoute
   SettingsRoute: typeof SettingsRoute
+  UsersRoute: typeof UsersRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -131,6 +157,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LiveMonitorRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/reports': {
       id: '/reports'
       path: '/reports'
@@ -152,6 +185,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/users': {
+      id: '/users'
+      path: '/users'
+      fullPath: '/users'
+      preLoaderRoute: typeof UsersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -159,9 +199,11 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   HistoryRoute: HistoryRoute,
   LiveMonitorRoute: LiveMonitorRoute,
+  LoginRoute: LoginRoute,
   ReportsRoute: ReportsRoute,
   SensorAnalyticsRoute: SensorAnalyticsRoute,
   SettingsRoute: SettingsRoute,
+  UsersRoute: UsersRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

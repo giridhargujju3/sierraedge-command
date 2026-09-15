@@ -1,10 +1,12 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { HudPanel, KeyValue } from "@/components/sms/HudPanel";
 import { Esp32ConfigPanel } from "@/components/sms/Esp32ConfigPanel";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
 import { useEsp32Link, useTelemetry } from "@/lib/sms/TelemetryProvider";
+import { useAuth, type AppUser } from "@/lib/auth";
+import { Button } from "@/components/ui/button";
 
 export const Route = createFileRoute("/settings")({
   head: () => ({
@@ -37,13 +39,118 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 function SettingsPage() {
   const { system, soldier } = useTelemetry();
   const esp32 = useEsp32Link();
+  const { user, setUser } = useAuth();
   const [audio, setAudio] = useState(true);
   const [autoRotate, setAutoRotate] = useState(false);
   const [hrLimit, setHrLimit] = useState([110]);
   const [tempLimit, setTempLimit] = useState([37.8]);
+  const [profile, setProfile] = useState({
+    username: user?.username ?? "",
+    name: user?.name ?? "",
+    password: "",
+  });
+  const [profileStatus, setProfileStatus] = useState<"idle" | "saving" | "success" | "error">("idle");
+  const [profileMessage, setProfileMessage] = useState("");
+
+  useEffect(() => {
+    setProfile({
+      username: user?.username ?? "",
+      name: user?.name ?? "",
+      password: "",
+    });
+  }, [user]);
+
+  if (!user) {
+    return null;
+  }
+
+  async function saveProfile() {
+    if (!user) return;
+    setProfileStatus("saving");
+    setProfileMessage("");
+
+    try {
+      const res = await fetch("/api/auth/users", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "profile",
+          username: profile.username,
+          name: profile.name,
+          password: profile.password || undefined,
+        }),
+      });
+      const payload = (await res.json().catch(() => null)) as { ok?: boolean; user?: AppUser; error?: string } | null;
+
+      if (!res.ok || !payload?.ok) {
+        setProfileStatus("error");
+        setProfileMessage(payload?.error ?? "Profile update failed");
+        return;
+      }
+
+      setUser(payload.user ?? null);
+      setProfile((prev) => ({ ...prev, password: "" }));
+      setProfileStatus("success");
+      setProfileMessage("PROFILE UPDATED");
+    } catch {
+      setProfileStatus("error");
+      setProfileMessage("PROFILE UPDATE FAILED");
+    }
+  }
 
   return (
     <div className="grid gap-3 lg:grid-cols-2">
+      <div className="lg:col-span-2">
+        <HudPanel title="Account Profile">
+          <div className="space-y-3">
+            <div>
+              <label className="mb-1 block text-[0.7rem] uppercase tracking-[0.14em] text-muted-foreground">
+                Username
+              </label>
+              <input
+                value={profile.username}
+                onChange={(event) => setProfile((prev) => ({ ...prev, username: event.target.value }))}
+                className="w-full rounded-md border border-primary/40 bg-background/40 px-3 py-2 text-sm text-foreground outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-[0.7rem] uppercase tracking-[0.14em] text-muted-foreground">
+                Full name
+              </label>
+              <input
+                value={profile.name}
+                onChange={(event) => setProfile((prev) => ({ ...prev, name: event.target.value }))}
+                className="w-full rounded-md border border-primary/40 bg-background/40 px-3 py-2 text-sm text-foreground outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-[0.7rem] uppercase tracking-[0.14em] text-muted-foreground">
+                New password
+              </label>
+              <input
+                type="password"
+                value={profile.password}
+                onChange={(event) => setProfile((prev) => ({ ...prev, password: event.target.value }))}
+                placeholder="Leave blank to keep current password"
+                className="w-full rounded-md border border-primary/40 bg-background/40 px-3 py-2 text-sm text-foreground outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
+              />
+            </div>
+            <Button type="button" onClick={saveProfile} className="w-full">
+              {profileStatus === "saving" ? "SAVING..." : "Update profile"}
+            </Button>
+            {profileMessage ? (
+              <p
+                className={
+                  profileStatus === "success" ? "text-sm text-ok" : profileStatus === "error" ? "text-sm text-destructive" : "text-sm text-muted-foreground"
+                }
+              >
+                {profileMessage}
+              </p>
+            ) : null}
+          </div>
+        </HudPanel>
+      </div>
+
       <div className="lg:col-span-2">
         <Esp32ConfigPanel />
       </div>

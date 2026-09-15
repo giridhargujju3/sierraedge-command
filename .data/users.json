@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "secret": "a5108f88f8057173a0ec723d682f7bd9d32a02bdd9468f653c743340b38486d1",
+  "users": [
+    {
+      "id": "u_dc4c2ebdd3b15aad",
+      "username": "admin",
+      "name": "Command Administrator",
+      "role": "admin",
+      "enabled": true,
+      "createdAt": 1789457206117,
+      "seed": true,
+      "salt": "a59d9fa6c01332bf202e512d55ca76ee",
+      "iterations": 100000,
+      "hash": "0626d9aa1577c6781faa9016837bf2aac1a255061071dc2897d15ade9403c4fe"
+    }
+  ]
+}

@@ -6,6 +6,7 @@ import {
   useRouter,
   HeadContent,
   Scripts,
+  useLocation,
 } from "@tanstack/react-router";
 import { useEffect, type ReactNode } from "react";
 
@@ -14,6 +15,7 @@ import { reportLovableError } from "../lib/lovable-error-reporting";
 import { TelemetryProvider } from "../lib/sms/TelemetryProvider";
 import { TopBar } from "../components/sms/TopBar";
 import { BottomNav } from "../components/sms/BottomNav";
+import { AuthProvider } from "@/lib/auth";
 
 function NotFoundComponent() {
   return (
@@ -103,7 +105,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
       {
         rel: "stylesheet",
-        href: "https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap",
+        href: "https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Barlow:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap",
       },
       { rel: "icon", href: "/favicon.ico", type: "image/x-icon" },
     ],
@@ -131,19 +133,26 @@ function RootShell({ children }: { children: ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+  const location = useLocation();
 
   return (
     <QueryClientProvider client={queryClient}>
-      <TelemetryProvider>
-        <div className="flex h-screen flex-col overflow-hidden">
-          <TopBar />
-          <main className="min-h-0 flex-1 overflow-y-auto px-2 py-2 scroll-thin">
-            {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-            <Outlet />
-          </main>
-          <BottomNav />
-        </div>
-      </TelemetryProvider>
+      <AuthProvider>
+        {location.pathname === "/login" ? (
+          <Outlet />
+        ) : (
+          <TelemetryProvider>
+            <div className="flex h-screen flex-col overflow-hidden">
+              <TopBar />
+              <main className="min-h-0 flex-1 overflow-y-auto px-2 py-2 scroll-thin">
+                {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
+                <Outlet />
+              </main>
+              <BottomNav />
+            </div>
+          </TelemetryProvider>
+        )}
+      </AuthProvider>
     </QueryClientProvider>
   );
 }
