@@ -15,6 +15,16 @@ import {
   UserRound,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  getGenderLabel,
+  getLanguageLabel,
+  getVoicePreferences,
+  queueGreetingAfterLogin,
+  saveVoicePreferences,
+  speakGreeting,
+  type GreetingLanguage,
+  type VoiceGender,
+} from "@/lib/voiceSettings";
 
 export const Route = createFileRoute("/login")({
   head: () => ({
@@ -47,9 +57,87 @@ function SierraMark({ compact = false }: { compact?: boolean }) {
   );
 }
 
+function LoginVoiceHeaderControls() {
+  const [language, setLanguage] = useState<GreetingLanguage>(() => getVoicePreferences().language);
+  const [voiceGender, setVoiceGender] = useState<VoiceGender>(() => getVoicePreferences().voiceGender);
+  const [muted, setMuted] = useState(() => getVoicePreferences().muted);
+
+  useEffect(() => {
+    saveVoicePreferences({ language, voiceGender, muted });
+  }, [language, muted, voiceGender]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+    if (muted) {
+      window.speechSynthesis.cancel();
+    }
+  }, [muted]);
+
+  useEffect(() => {
+    if (muted || typeof window === "undefined" || !("speechSynthesis" in window)) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      speakGreeting("Operator", language, voiceGender);
+    }, 600);
+
+    return () => window.clearTimeout(timer);
+  }, [language, muted, voiceGender]);
+
+  return (
+    <div className="ml-auto flex items-center gap-2 rounded-md border border-primary/30 bg-slate-950/40 px-2 py-1.5 shadow-[0_0_18px_rgba(34,211,238,0.08)] backdrop-blur-sm">
+      <label className="flex items-center gap-1.5 text-[8px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+        <span>{getLanguageLabel(language)}</span>
+        <select
+          value={language}
+          onChange={(e) => setLanguage(e.target.value as GreetingLanguage)}
+          className="rounded border border-primary/30 bg-background/80 px-1.5 py-1 text-[10px] font-medium text-foreground outline-none"
+        >
+          <option value="en">English</option>
+          <option value="hi">Hindi</option>
+          <option value="te">Telugu</option>
+        </select>
+      </label>
+
+      <label className="flex items-center gap-1.5 text-[8px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+        <span>{getGenderLabel(voiceGender)}</span>
+        <select
+          value={voiceGender}
+          onChange={(e) => setVoiceGender(e.target.value as VoiceGender)}
+          className="rounded border border-primary/30 bg-background/80 px-1.5 py-1 text-[10px] font-medium text-foreground outline-none"
+        >
+          <option value="female">Female</option>
+          <option value="male">Male</option>
+        </select>
+      </label>
+
+      <button
+        type="button"
+        onClick={() => {
+          setMuted((value) => {
+            const next = !value;
+            if (!next && typeof window !== "undefined" && "speechSynthesis" in window) {
+              speakGreeting("Operator", language, voiceGender);
+            }
+            return next;
+          });
+
+          if (typeof window !== "undefined" && "speechSynthesis" in window) {
+            window.speechSynthesis.cancel();
+          }
+        }}
+        className="rounded border border-primary/35 bg-primary/10 px-2 py-1 text-[8px] font-semibold uppercase tracking-[0.14em] text-primary transition hover:bg-primary/20"
+      >
+        {muted ? "Unmute" : "Mute"}
+      </button>
+    </div>
+  );
+}
+
 function TopHeader() {
   return (
-    <header className="hud-header relative z-30 grid h-15 grid-cols-[minmax(0,1fr)] items-center px-5 lg:px-12">
+    <header className="hud-header relative z-30 flex h-15 items-center gap-4 px-5 lg:px-12">
       <div className="flex min-w-0 items-center gap-4">
         <SierraMark compact />
         <strong className="font-display truncate text-primary">
@@ -60,6 +148,8 @@ function TopHeader() {
           SMART MANNEQUIN SYSTEM
         </span>
       </div>
+
+      <LoginVoiceHeaderControls />
     </header>
   );
 }
@@ -244,6 +334,9 @@ function LoginConsole() {
       }
       setStatus("success");
       setMessage("AUTHENTICATION VERIFIED — SYSTEM ACCESS GRANTED");
+      const userName = payload?.user?.name || payload?.user?.username || email;
+      const prefs = getVoicePreferences();
+      queueGreetingAfterLogin(userName, prefs.language, prefs.voiceGender);
       window.location.replace("/");
     } catch {
       setStatus("error");
@@ -362,6 +455,7 @@ function LoginConsole() {
           <Building2 /> Sign in with SSO
         </Button>
       </form>
+
       <div className="security-block">
         <ShieldCheck />
         <div>

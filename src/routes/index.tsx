@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { SidebarResizeHandle } from "@/components/sms/SidebarResizeHandle";
 import {
@@ -17,6 +17,15 @@ import { MissionPanel } from "@/components/sms/MissionPanel";
 import { AlertsPanel } from "@/components/sms/AlertsPanel";
 import { EquipmentPanel } from "@/components/sms/EquipmentPanel";
 import { TrendsPanel } from "@/components/sms/TrendsPanel";
+import { useAuth } from "@/lib/auth";
+import {
+  consumePendingGreeting,
+  getGenderLabel,
+  getGreetingText,
+  getLanguageLabel,
+  getVoicePreferences,
+  speakGreeting,
+} from "@/lib/voiceSettings";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -38,6 +47,77 @@ export const Route = createFileRoute("/")({
   component: Dashboard,
 });
 
+function WelcomeVoiceToast() {
+  const { user } = useAuth();
+  const [prefs, setPrefs] = useState(() => getVoicePreferences());
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    const next = getVoicePreferences();
+    setPrefs(next);
+  }, []);
+
+  useEffect(() => {
+    if (!user) {
+      setVisible(false);
+      return;
+    }
+
+    const pending = consumePendingGreeting();
+    const shouldAutoPlay = !pending && prefs.autoPlay;
+    if (!shouldAutoPlay && !pending) {
+      setVisible(true);
+      return;
+    }
+
+    const handle = window.setTimeout(() => {
+      const name = pending?.name || user.name || user.username;
+      const language = pending?.language || prefs.language;
+      const gender = pending?.gender || prefs.voiceGender;
+
+      if (prefs.muted || typeof window === "undefined" || !("speechSynthesis" in window)) {
+        setVisible(true);
+        const fallback = window.setTimeout(() => setVisible(false), 2500);
+        return () => window.clearTimeout(fallback);
+      }
+
+      setVisible(true);
+      speakGreeting(name, language, gender, () => {
+        setVisible(false);
+      });
+    }, pending ? 350 : 500);
+
+    return () => window.clearTimeout(handle);
+  }, [prefs.autoPlay, prefs.language, prefs.muted, prefs.voiceGender, user]);
+
+  if (!user || !visible) return null;
+
+  const displayName = user.name || user.username || "Operator";
+  const roleLabel = user.role === "admin" ? "Administrator" : "Operator";
+  const greetingText = getGreetingText(displayName, prefs.language).replace(/\.$/, "");
+
+  return (
+    <div className="voice-toast pointer-events-none fixed bottom-5 right-5 z-50 w-[320px] max-w-[calc(100vw-24px)] rounded-xl border border-primary/30 bg-slate-950/80 p-4 shadow-[0_0_30px_rgba(34,211,238,0.12)] backdrop-blur-md">
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <span className="flex h-2.5 w-2.5 rounded-full bg-emerald-400 shadow-[0_0_12px_rgba(52,211,153,0.9)]" />
+          <span className="text-[10px] font-semibold uppercase tracking-[0.25em] text-emerald-300">
+            {roleLabel}
+          </span>
+        </div>
+        <span className="text-[9px] uppercase tracking-[0.2em] text-muted-foreground">
+          {getLanguageLabel(prefs.language)} · {getGenderLabel(prefs.voiceGender)}
+        </span>
+      </div>
+
+      <p className="text-sm font-semibold text-foreground">{greetingText}</p>
+      <p className="mt-1 text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+        system ready
+      </p>
+    </div>
+  );
+}
+
 function Dashboard() {
   const [widths, setWidths] = useState<SidebarWidths>(readSidebarWidths);
   const gridRef = useRef<HTMLDivElement>(null);
@@ -51,46 +131,50 @@ function Dashboard() {
   }, []);
 
   return (
-    <div
-      ref={gridRef}
-      style={{ "--lw": `${widths.left}px`, "--rw": `${widths.right}px` } as CSSProperties}
-      className="relative grid h-full min-h-0 gap-3 xl:[grid-template-columns:var(--lw)_minmax(0,1fr)_var(--rw)]"
-    >
-      <div className="min-h-0 space-y-3 xl:overflow-y-auto xl:pr-1 scroll-thin">
-        <SoldierOverview />
-        <VitalSigns />
-        <LocationPanel />
-        <SystemStatus />
+    <>
+      <div
+        ref={gridRef}
+        style={{ "--lw": `${widths.left}px`, "--rw": `${widths.right}px` } as CSSProperties}
+        className="relative grid h-full min-h-0 gap-3 xl:[grid-template-columns:var(--lw)_minmax(0,1fr)_var(--rw)]"
+      >
+        <div className="min-h-0 space-y-3 xl:overflow-y-auto xl:pr-1 scroll-thin">
+          <SoldierOverview />
+          <VitalSigns />
+          <LocationPanel />
+          <SystemStatus />
+        </div>
+
+        <div className="flex min-h-[420px] flex-col gap-3 xl:min-h-0">
+          <MannequinStage />
+        </div>
+
+        <div className="min-h-0 space-y-3 xl:overflow-y-auto xl:pr-1 scroll-thin">
+          <SensorDataPanel />
+          <MissionPanel />
+          <AlertsPanel />
+          <EquipmentPanel />
+          <TrendsPanel keys={["tempChest", "gasAir"]} />
+        </div>
+
+        <SidebarResizeHandle
+          side="left"
+          width={widths.left}
+          defaultWidth={SIDEBAR_DEFAULTS.left}
+          cssVar="--lw"
+          containerRef={gridRef}
+          onCommit={commitWidth}
+        />
+        <SidebarResizeHandle
+          side="right"
+          width={widths.right}
+          defaultWidth={SIDEBAR_DEFAULTS.right}
+          cssVar="--rw"
+          containerRef={gridRef}
+          onCommit={commitWidth}
+        />
       </div>
 
-      <div className="flex min-h-[420px] flex-col gap-3 xl:min-h-0">
-        <MannequinStage />
-      </div>
-
-      <div className="min-h-0 space-y-3 xl:overflow-y-auto xl:pr-1 scroll-thin">
-        <SensorDataPanel />
-        <MissionPanel />
-        <AlertsPanel />
-        <EquipmentPanel />
-        <TrendsPanel keys={["tempChest", "gasAir"]} />
-      </div>
-
-      <SidebarResizeHandle
-        side="left"
-        width={widths.left}
-        defaultWidth={SIDEBAR_DEFAULTS.left}
-        cssVar="--lw"
-        containerRef={gridRef}
-        onCommit={commitWidth}
-      />
-      <SidebarResizeHandle
-        side="right"
-        width={widths.right}
-        defaultWidth={SIDEBAR_DEFAULTS.right}
-        cssVar="--rw"
-        containerRef={gridRef}
-        onCommit={commitWidth}
-      />
-    </div>
+      <WelcomeVoiceToast />
+    </>
   );
 }
