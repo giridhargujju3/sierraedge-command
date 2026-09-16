@@ -6,6 +6,7 @@ export type AppRole = "admin" | "user";
 export interface AppUser {
   id: string;
   username: string;
+  email?: string;
   name: string;
   role: AppRole;
 }
@@ -31,6 +32,7 @@ export function readStoredUser(): AppUser | null {
     return {
       id: String(parsed.id),
       username: String(parsed.username),
+      email: parsed.email ? String(parsed.email) : undefined,
       name: String(parsed.name ?? parsed.username),
       role: parsed.role === "admin" ? "admin" : "user",
     };

@@ -19,17 +19,17 @@ import { Button } from "@/components/ui/button";
 export const Route = createFileRoute("/login")({
   head: () => ({
     meta: [
-      { title: "Secure Command Access | SIERRAEDGE" },
+      { title: "Secure Command Access | Smart Mannequin System" },
       {
         name: "description",
         content:
-          "Secure access to the SIERRAEDGE Smart Mannequin System mission-control workspace.",
+          "Secure access to the Smart Mannequin System mission-control workspace.",
       },
-      { property: "og:title", content: "Secure Command Access | SIERRAEDGE" },
+      { property: "og:title", content: "Secure Command Access | Smart Mannequin System" },
       {
         property: "og:description",
         content:
-          "Secure access to the SIERRAEDGE Smart Mannequin System mission-control workspace.",
+          "Secure access to the Smart Mannequin System mission-control workspace.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
@@ -272,7 +272,7 @@ function LoginConsole() {
       </div>
       <form onSubmit={handleSubmit} className="login-form">
         <label className="sr-only" htmlFor="email">
-          Username
+          Email or Username
         </label>
         <div className="field">
           <UserRound />
@@ -282,7 +282,7 @@ function LoginConsole() {
             type="text"
             autoComplete="username"
             required
-            placeholder="Username"
+            placeholder="Email or username"
           />
         </div>
         <label className="sr-only" htmlFor="password">
@@ -343,6 +343,7 @@ function LoginConsole() {
           </span>
           <ArrowRight className="login-arrow" />
         </Button>
+
         <div className={`auth-message ${status}`} role="status">
           {message}
         </div>

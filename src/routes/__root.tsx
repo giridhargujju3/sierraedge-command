@@ -82,16 +82,16 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "SierraEdge Smart Mannequin System" },
+      { title: "Smart Mannequin System" },
       {
         name: "description",
-        content: "Command and monitoring console for the SierraEdge Smart Mannequin System.",
+        content: "Command and monitoring console for the Smart Mannequin System.",
       },
       { name: "author", content: "SierraEdge" },
-      { property: "og:title", content: "SierraEdge Smart Mannequin System" },
+      { property: "og:title", content: "Smart Mannequin System" },
       {
         property: "og:description",
-        content: "Command and monitoring console for the SierraEdge Smart Mannequin System.",
+        content: "Command and monitoring console for the Smart Mannequin System.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
@@ -107,7 +107,8 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         rel: "stylesheet",
         href: "https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Barlow:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap",
       },
-      { rel: "icon", href: "/favicon.ico", type: "image/x-icon" },
+      { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" },
+      { rel: "shortcut icon", href: "/favicon.svg", type: "image/svg+xml" },
     ],
   }),
 

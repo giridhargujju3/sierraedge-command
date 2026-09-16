@@ -1,17 +1,39 @@
 import "./lib/error-capture";
 
-import { createHmac, pbkdf2Sync } from "node:crypto";
+import { createHmac, pbkdf2Sync, randomBytes } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import nodemailer from "nodemailer";
+import { Client } from "pg";
 
 import { consumeLastCapturedError } from "./lib/error-capture";
 import { renderErrorPage } from "./lib/error-page";
+import { createInviteUrl, getInviteDeliveryMessage, isValidEmail, normalizeEmail } from "./lib/invite";
 
 type ServerEntry = {
   fetch: (request: Request, env: unknown, ctx: unknown) => Promise<Response> | Response;
 };
 
 const DATA_PATH = join(process.cwd(), ".data", "users.json");
+const DEFAULT_SECRET = "a5108f88f8057173a0ec723d682f7bd9d32a02bdd9468f653c743340b38486d1";
+
+function getPostgresConfig() {
+  const host = process.env.POSTGRES_HOST ?? "localhost";
+  const port = Number(process.env.POSTGRES_PORT ?? "5432");
+  const database = process.env.POSTGRES_DB ?? "postgres";
+  const user = process.env.POSTGRES_USER ?? "postgres";
+  const password = process.env.POSTGRES_PASSWORD ?? "";
+  const enabled = Boolean(process.env.POSTGRES_HOST || process.env.POSTGRES_DB || process.env.POSTGRES_USER || process.env.POSTGRES_PASSWORD || process.env.POSTGRES_PORT);
+
+  return {
+    enabled,
+    host,
+    port,
+    database,
+    user,
+    password,
+  };
+}
 
 function base64UrlEncode(value: string) {
   return Buffer.from(value).toString("base64").replace(/=+$/g, "").replace(/\+/g, "-").replace(/\//g, "_");
@@ -21,6 +43,11 @@ function base64UrlDecode(value: string) {
   const pad = value.length % 4;
   const normalized = pad === 0 ? value : value + "=".repeat(4 - pad);
   return Buffer.from(normalized.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8");
+}
+
+function makeUniqueUsername(value: string) {
+  const base = normalizeEmail(value).split("@")[0] || "user";
+  return `${base}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
 function jsonResponse(body: unknown, init?: ResponseInit) {
@@ -43,7 +70,7 @@ function getCookieValue(request: Request, name: string) {
   return decodeURIComponent(match.slice(name.length + 1));
 }
 
-async function readUsersStore() {
+async function readLegacyUsersStore() {
   try {
     const raw = await readFile(DATA_PATH, "utf8");
     return JSON.parse(raw) as {
@@ -55,14 +82,16 @@ async function readUsersStore() {
 
     const defaultStore = {
       version: 1,
-      secret: "a5108f88f8057173a0ec723d682f7bd9d32a02bdd9468f653c743340b38486d1",
+      secret: DEFAULT_SECRET,
       users: [
         {
           id: "u_dc4c2ebdd3b15aad",
           username: "admin",
+          email: "admin@sierrraedge.local",
           name: "Command Administrator",
           role: "admin",
           enabled: true,
+          status: "active",
           createdAt: Date.now(),
           seed: true,
           salt: "a59d9fa6c01332bf202e512d55ca76ee",
@@ -77,13 +106,109 @@ async function readUsersStore() {
   }
 }
 
-async function writeUsersStore(store: any) {
+async function writeLegacyUsersStore(store: any) {
   await writeFile(DATA_PATH, `${JSON.stringify(store, null, 2)}\n`, "utf8");
+}
+
+async function readUsersStore() {
+  const pgConfig = getPostgresConfig();
+
+  if (pgConfig.enabled) {
+    const client = new Client({
+      host: pgConfig.host,
+      port: pgConfig.port,
+      database: pgConfig.database,
+      user: pgConfig.user,
+      password: pgConfig.password,
+      ssl: process.env.POSTGRES_SSL === "true" ? { rejectUnauthorized: false } : undefined,
+    });
+
+    try {
+      await client.connect();
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS app_meta (
+          key TEXT PRIMARY KEY,
+          value TEXT NOT NULL
+        );
+      `);
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS app_users (
+          id TEXT PRIMARY KEY,
+          payload JSONB NOT NULL
+        );
+      `);
+
+      const secretRow = await client.query("SELECT value FROM app_meta WHERE key = 'secret' LIMIT 1");
+      const userRows = await client.query("SELECT payload FROM app_users ORDER BY id");
+      const users = userRows.rows.map((row) => row.payload as Record<string, any>);
+      const secret = String(secretRow.rows[0]?.value ?? DEFAULT_SECRET);
+
+      if (!userRows.rowCount) {
+        const legacyStore = await readLegacyUsersStore();
+        await writeUsersStore(legacyStore);
+        return legacyStore;
+      }
+
+      return { secret, users };
+    } catch (error) {
+      console.warn("PostgreSQL user store unavailable, falling back to JSON store:", error);
+    } finally {
+      await client.end().catch(() => undefined);
+    }
+  }
+
+  return readLegacyUsersStore();
+}
+
+async function writeUsersStore(store: any) {
+  const pgConfig = getPostgresConfig();
+
+  if (pgConfig.enabled) {
+    const client = new Client({
+      host: pgConfig.host,
+      port: pgConfig.port,
+      database: pgConfig.database,
+      user: pgConfig.user,
+      password: pgConfig.password,
+      ssl: process.env.POSTGRES_SSL === "true" ? { rejectUnauthorized: false } : undefined,
+    });
+
+    try {
+      await client.connect();
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS app_meta (
+          key TEXT PRIMARY KEY,
+          value TEXT NOT NULL
+        );
+      `);
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS app_users (
+          id TEXT PRIMARY KEY,
+          payload JSONB NOT NULL
+        );
+      `);
+
+      await client.query("BEGIN");
+      await client.query("DELETE FROM app_users");
+      for (const user of store.users ?? []) {
+        await client.query("INSERT INTO app_users (id, payload) VALUES ($1, $2)", [user.id, JSON.stringify(user)]);
+      }
+      await client.query("INSERT INTO app_meta (key, value) VALUES ('secret', $1) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value", [String(store.secret ?? DEFAULT_SECRET)]);
+      await client.query("COMMIT");
+      return;
+    } catch (error) {
+      console.error("Unable to persist users in PostgreSQL. Falling back to JSON store.", error);
+    } finally {
+      await client.end().catch(() => undefined);
+    }
+  }
+
+  await writeLegacyUsersStore(store);
 }
 
 function stripUser(user: any) {
   if (!user) return null;
-  const { hash, salt, iterations, ...safe } = user;
+  const { hash, salt, iterations, inviteToken, inviteTokenHash, ...safe } = user;
   return safe;
 }
 
@@ -95,6 +220,68 @@ function createSaltHex() {
   return Buffer.from(
     Array.from({ length: 16 }, () => Math.floor(Math.random() * 256)),
   ).toString("hex");
+}
+
+function createInviteToken() {
+  return randomBytes(20).toString("hex");
+}
+
+function escapeHtml(value: string) {
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\"/g, "&quot;").replace(/'/g, "&#039;");
+}
+
+async function sendInviteEmail(
+  address: string,
+  name: string,
+  inviteUrl: string,
+  subject = "SierraEdge invitation — accept access",
+  password?: string,
+) {
+  const host = process.env.EMAIL_HOST;
+  const port = Number(process.env.EMAIL_PORT ?? "587");
+  const user = process.env.EMAIL_USER;
+  const pass = process.env.EMAIL_PASS;
+  const fromAddress = process.env.EMAIL_FROM ?? "SierraEdge Command <noreply@localhost>";
+
+  if (!host || !user || !pass) {
+    console.info(`[email] SMTP not configured; invite link for ${address}: ${inviteUrl}`);
+    return { ok: true, delivered: false, reason: "SMTP not configured" };
+  }
+
+  const transporter = nodemailer.createTransport({
+    host,
+    port,
+    secure: port === 465,
+    auth: { user, pass },
+  });
+
+  try {
+    const accessPasswordHtml = password
+      ? `<p style="margin:0 0 16px;padding:12px 14px;border:1px solid #bae6fd;border-radius:8px;background:#f0f9ff;color:#0f172a;"><strong>Access password:</strong> ${escapeHtml(password)}</p>`
+      : "";
+
+    const result = await transporter.sendMail({
+      from: fromAddress,
+      to: address,
+      subject,
+      html: `
+        <div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;padding:24px;border:1px solid #d9d9d9;border-radius:12px;">
+          <h2 style="margin:0 0 12px;color:#0f172a;">Welcome to SierraEdge</h2>
+          <p style="margin:0 0 12px;color:#334155;">Hello ${name || "Operator"},</p>
+          <p style="margin:0 0 16px;color:#334155;">You have been invited to access the SierraEdge Smart Mannequin System. Please accept the invitation below to continue.</p>
+          ${accessPasswordHtml}
+          <p style="margin:0 0 20px;"><a href="${inviteUrl}" style="display:inline-block;padding:12px 20px;background:#0ea5e9;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold;">Continue to SierraEdge</a></p>
+          <p style="margin:0;color:#475569;">If the button does not work, use this link: <a href="${inviteUrl}">${inviteUrl}</a></p>
+        </div>
+      `,
+    });
+
+    return { ok: true, delivered: Boolean(result.accepted?.length), messageId: result.messageId };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "SMTP send failed";
+    console.error(`[email] SMTP failure for ${address}: ${message}`);
+    return { ok: false, delivered: false, reason: "SMTP send failed", error: message };
+  }
 }
 
 async function getSessionUser(request: Request) {
@@ -150,21 +337,43 @@ async function handleAuthApi(request: Request) {
       return jsonResponse({ ok: false, error: "Method not allowed" }, { status: 405 });
     }
 
-    const username = String(body.username ?? "").trim();
+    const loginValue = String(body.username ?? body.email ?? "").trim();
     const password = String(body.password ?? "");
     const remember = Boolean(body.remember);
 
-    if (!username || !password) {
+    if (!loginValue || !password) {
       return jsonResponse({ ok: false, error: "Missing credentials" }, { status: 400 });
     }
 
     const store = await readUsersStore();
-    const user = (store.users ?? []).find(
-      (candidate) => (candidate.username || "").toLowerCase() === username.toLowerCase(),
-    );
+    const normalizedLogin = normalizeEmail(loginValue);
+    const user = (store.users ?? []).find((candidate) => {
+      const usernameMatch = (candidate.username || "").toLowerCase() === loginValue.toLowerCase();
+      const emailMatch = normalizeEmail(String(candidate.email ?? "")) === normalizedLogin;
+      return usernameMatch || emailMatch;
+    });
 
-    if (!user || !user.enabled) {
-      return jsonResponse({ ok: false, error: "Invalid username or password" }, { status: 401 });
+    if (!user) {
+      return jsonResponse({ ok: false, error: "User not found" }, { status: 404 });
+    }
+
+    if (user.status && ["disabled", "deleted", "invited"].includes(user.status)) {
+      return jsonResponse(
+        {
+          ok: false,
+          error:
+            user.status === "deleted"
+              ? "This account has been deleted and cannot access the system."
+              : user.status === "invited"
+                ? "This account is waiting for invitation approval."
+                : "This account is currently disabled and cannot access the system.",
+        },
+        { status: 403 },
+      );
+    }
+
+    if (!user.enabled) {
+      return jsonResponse({ ok: false, error: "This account is currently disabled and cannot access the system." }, { status: 403 });
     }
 
     const salt = Buffer.from(String(user.salt ?? ""), "hex");
@@ -173,7 +382,7 @@ async function handleAuthApi(request: Request) {
     const derived = pbkdf2Sync(password, salt, iterations, keylen, "sha256").toString("hex");
 
     if (derived !== String(user.hash ?? "")) {
-      return jsonResponse({ ok: false, error: "Invalid username or password" }, { status: 401 });
+      return jsonResponse({ ok: false, error: "Invalid email or password" }, { status: 401 });
     }
 
     const payload = { uid: user.id, iat: Date.now() };
@@ -182,9 +391,117 @@ async function handleAuthApi(request: Request) {
     const sig = createHmac("sha256", store.secret ?? "").update(payloadPart).digest("hex");
     const token = `${payloadPart}.${sig}`;
 
-    const response = jsonResponse({ ok: true, user: { id: user.id, username: user.username, name: user.name, role: user.role } });
+    const response = jsonResponse({
+      ok: true,
+      user: { id: user.id, username: user.username, email: user.email, name: user.name, role: user.role },
+    });
     appendSetCookieHeader(response, "se_session", token, {
       maxAge: remember ? 60 * 60 * 24 * 30 : 60 * 60 * 8,
+      secure: isSecureRequest(request),
+    });
+    return response;
+  }
+
+  if (action === "request-magic-link") {
+    if (request.method !== "POST") {
+      return jsonResponse({ ok: false, error: "Method not allowed" }, { status: 405 });
+    }
+
+    const email = normalizeEmail(String(body.email ?? ""));
+    if (!email || !isValidEmail(email)) {
+      return jsonResponse({ ok: false, error: "A valid Gmail address is required" }, { status: 400 });
+    }
+
+    const store = await readUsersStore();
+    const target = (store.users ?? []).find((candidate) => normalizeEmail(String(candidate.email ?? "")) === email);
+    if (!target) {
+      return jsonResponse({ ok: false, error: "This Gmail is not on the approved access list" }, { status: 404 });
+    }
+
+    if (!target.enabled && target.status !== "invited") {
+      return jsonResponse({ ok: false, error: "This account is not active yet" }, { status: 403 });
+    }
+
+    const inviteToken = createInviteToken();
+    target.inviteToken = inviteToken;
+    target.inviteTokenHash = createHmac("sha256", store.secret ?? "").update(inviteToken).digest("hex");
+    target.inviteExpiresAt = Date.now() + 1000 * 60 * 60 * 24;
+
+    await writeUsersStore(store);
+
+    const inviteUrl = createInviteUrl(new URL(request.url).origin, inviteToken);
+    const emailRes = await sendInviteEmail(
+      email,
+      target.name || "Operator",
+      inviteUrl,
+      "SierraEdge sign-in — continue to the workspace",
+    );
+
+    if (!emailRes.ok || !emailRes.delivered) {
+      return jsonResponse(
+        {
+          ok: false,
+          error: getInviteDeliveryMessage(emailRes),
+          email: emailRes,
+          inviteUrl,
+        },
+        { status: 502 },
+      );
+    }
+
+    return jsonResponse({ ok: true, email: emailRes, inviteUrl });
+  }
+
+  if (action === "accept-invite") {
+    if (request.method !== "POST") {
+      return jsonResponse({ ok: false, error: "Method not allowed" }, { status: 405 });
+    }
+
+    const token = String(body.token ?? "").trim();
+    const password = String(body.password ?? "");
+    if (!token) {
+      return jsonResponse({ ok: false, error: "Invitation token is required" }, { status: 400 });
+    }
+
+    const store = await readUsersStore();
+    const target = (store.users ?? []).find((candidate) => {
+      if (!candidate.inviteTokenHash || !candidate.inviteToken) return false;
+      const expectedHash = createHmac("sha256", store.secret ?? "").update(String(candidate.inviteToken)).digest("hex");
+      return expectedHash === candidate.inviteTokenHash && expectedHash === createHmac("sha256", store.secret ?? "").update(token).digest("hex");
+    });
+
+    if (!target) {
+      return jsonResponse({ ok: false, error: "Invitation token is invalid or expired" }, { status: 400 });
+    }
+
+    if (!target.inviteToken || Number(target.inviteExpiresAt ?? 0) <= Date.now()) {
+      return jsonResponse({ ok: false, error: "Invitation token is invalid or expired" }, { status: 400 });
+    }
+
+    if (password) {
+      const salt = createSaltHex();
+      target.salt = salt;
+      target.hash = hashPassword(password, salt);
+    }
+
+    target.enabled = true;
+    target.status = "active";
+    target.acceptedAt = Date.now();
+    delete target.inviteToken;
+    delete target.inviteTokenHash;
+    delete target.inviteExpiresAt;
+
+    await writeUsersStore(store);
+
+    const payload = { uid: target.id, iat: Date.now() };
+    const payloadStr = JSON.stringify(payload);
+    const payloadPart = base64UrlEncode(payloadStr);
+    const sig = createHmac("sha256", store.secret ?? "").update(payloadPart).digest("hex");
+    const sessionToken = `${payloadPart}.${sig}`;
+
+    const response = jsonResponse({ ok: true, user: stripUser(target) });
+    appendSetCookieHeader(response, "se_session", sessionToken, {
+      maxAge: 60 * 60 * 24 * 30,
       secure: isSecureRequest(request),
     });
     return response;
@@ -265,24 +582,32 @@ async function handleAuthApi(request: Request) {
 
       const username = String(body.username ?? "").trim();
       const name = String(body.name ?? "").trim();
+      const email = normalizeEmail(String(body.email ?? ""));
       const role = body.role === "admin" ? "admin" : "user";
       const password = String(body.password ?? "");
 
-      if (!username || !name || !password) {
-        return jsonResponse({ ok: false, error: "Username, name and password are required" }, { status: 400 });
+      if (!name || !email || !password) {
+        return jsonResponse({ ok: false, error: "Name, email and password are required" }, { status: 400 });
       }
 
-      if ((store.users ?? []).some((user) => (user.username || "").toLowerCase() === username.toLowerCase())) {
-        return jsonResponse({ ok: false, error: "Username already exists" }, { status: 409 });
+      if (!isValidEmail(email)) {
+        return jsonResponse({ ok: false, error: "A valid email address is required" }, { status: 400 });
+      }
+
+      const collidingUsername = String(username || makeUniqueUsername(email));
+      if ((store.users ?? []).some((user) => (user.email ? normalizeEmail(user.email) : "") === email || (user.username || "").toLowerCase() === collidingUsername.toLowerCase())) {
+        return jsonResponse({ ok: false, error: "User already exists" }, { status: 409 });
       }
 
       const salt = createSaltHex();
       const newUser = {
         id: `u_${Math.random().toString(36).slice(2, 10)}`,
-        username,
+        username: collidingUsername,
+        email,
         name,
         role,
         enabled: true,
+        status: "active",
         createdAt: Date.now(),
         salt,
         iterations: 100000,
@@ -292,6 +617,81 @@ async function handleAuthApi(request: Request) {
       store.users = [...(store.users ?? []), newUser];
       await writeUsersStore(store);
       return jsonResponse({ ok: true, user: stripUser(newUser) });
+    }
+
+    if (actionName === "invite") {
+      if (!currentUser || currentUser.role !== "admin") {
+        return jsonResponse({ ok: false, error: "Forbidden" }, { status: 403 });
+      }
+
+      const email = normalizeEmail(String(body.email ?? ""));
+      const name = String(body.name ?? "").trim();
+      const role = body.role === "admin" ? "admin" : "user";
+      const password = String(body.password ?? "").trim();
+
+      if (!email || !name) {
+        return jsonResponse({ ok: false, error: "Name and a valid Gmail address are required" }, { status: 400 });
+      }
+
+      if (!isValidEmail(email)) {
+        return jsonResponse({ ok: false, error: "A valid email address is required" }, { status: 400 });
+      }
+
+      if ((store.users ?? []).some((user) => normalizeEmail(String(user.email ?? "")) === email)) {
+        return jsonResponse({ ok: false, error: "This email is already invited or active" }, { status: 409 });
+      }
+
+      const username = makeUniqueUsername(email);
+      const inviteToken = createInviteToken();
+      const salt = password ? createSaltHex() : undefined;
+      const inviteUser = {
+        id: `u_${Math.random().toString(36).slice(2, 10)}`,
+        username,
+        email,
+        name,
+        role,
+        enabled: false,
+        status: "invited",
+        invitedBy: currentUser.id,
+        invitedAt: Date.now(),
+        inviteToken,
+        inviteTokenHash: createHmac("sha256", store.secret ?? "").update(inviteToken).digest("hex"),
+        inviteExpiresAt: Date.now() + 1000 * 60 * 60 * 24 * 7,
+        createdAt: Date.now(),
+        ...(salt
+          ? {
+              salt,
+              iterations: 100000,
+              hash: hashPassword(password, salt),
+            }
+          : {}),
+      };
+
+      store.users = [...(store.users ?? []), inviteUser];
+      await writeUsersStore(store);
+
+      const inviteUrl = `${new URL(request.url).origin}/accept-invite?token=${encodeURIComponent(inviteToken)}`;
+      const emailRes = await sendInviteEmail(email, name, inviteUrl, "SierraEdge invitation — accept access", password || undefined);
+
+      if (!emailRes.ok || !emailRes.delivered) {
+        return jsonResponse(
+          {
+            ok: false,
+            error: getInviteDeliveryMessage(emailRes),
+            user: stripUser(inviteUser),
+            email: emailRes,
+            inviteUrl,
+          },
+          { status: 502 },
+        );
+      }
+
+      return jsonResponse({
+        ok: true,
+        user: stripUser(inviteUser),
+        email: emailRes,
+        inviteUrl,
+      });
     }
 
     if (actionName === "update") {
@@ -308,11 +708,39 @@ async function handleAuthApi(request: Request) {
       if (body.username) targetUser.username = String(body.username).trim();
       if (body.name) targetUser.name = String(body.name).trim();
       if (body.role) targetUser.role = body.role === "admin" ? "admin" : "user";
-      if (body.password) {
+      if (typeof body.password === "string" && body.password.trim()) {
         targetUser.salt = createSaltHex();
-        targetUser.hash = hashPassword(String(body.password), targetUser.salt);
+        targetUser.hash = hashPassword(String(body.password).trim(), targetUser.salt);
+      }
+      if (typeof body.status === "string") {
+        const normalizedStatus = body.status.toLowerCase();
+        if (["active", "disabled", "deleted", "invited"].includes(normalizedStatus)) {
+          targetUser.status = normalizedStatus;
+          targetUser.enabled = normalizedStatus === "active";
+        }
+      }
+      if (typeof body.enabled === "boolean") {
+        targetUser.enabled = Boolean(body.enabled);
+        targetUser.status = targetUser.enabled ? (targetUser.status === "deleted" ? "disabled" : "active") : "disabled";
       }
 
+      await writeUsersStore(store);
+      return jsonResponse({ ok: true, user: stripUser(targetUser) });
+    }
+
+    if (actionName === "delete") {
+      if (!currentUser || currentUser.role !== "admin") {
+        return jsonResponse({ ok: false, error: "Forbidden" }, { status: 403 });
+      }
+
+      const targetId = String(body.id ?? "");
+      const targetUser = (store.users ?? []).find((user) => user.id === targetId);
+      if (!targetUser) {
+        return jsonResponse({ ok: false, error: "User not found" }, { status: 404 });
+      }
+
+      targetUser.enabled = false;
+      targetUser.status = "deleted";
       await writeUsersStore(store);
       return jsonResponse({ ok: true, user: stripUser(targetUser) });
     }

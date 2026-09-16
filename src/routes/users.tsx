@@ -5,9 +5,11 @@ import { useAuth } from "@/lib/auth";
 interface UserRecord {
   id: string;
   username: string;
+  email?: string;
   name: string;
   role: "admin" | "user";
   enabled: boolean;
+  status?: "invited" | "active" | "disabled" | "deleted";
   createdAt?: number;
 }
 
@@ -21,7 +23,7 @@ function UsersPage() {
   const [users, setUsers] = useState<UserRecord[]>([]);
   const [form, setForm] = useState({
     name: "",
-    username: "",
+    email: "",
     password: "",
     role: "user" as "admin" | "user",
   });
@@ -51,15 +53,23 @@ function UsersPage() {
     void loadUsers();
   }, [navigate, user]);
 
+  async function refreshUsers() {
+    const nextRes = await fetch("/api/auth/users", { credentials: "same-origin" });
+    const nextPayload = (await nextRes.json().catch(() => null)) as { ok?: boolean; users?: UserRecord[] } | null;
+    if (nextRes.ok && nextPayload?.ok) {
+      setUsers(nextPayload.users ?? []);
+    }
+  }
+
   async function createUser(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
     setMessage("");
 
     const payload = {
-      action: "create",
+      action: "invite",
       name: form.name,
-      username: form.username,
+      email: form.email,
       password: form.password,
       role: form.role,
     };
@@ -76,15 +86,52 @@ function UsersPage() {
         setError(data?.error ?? "Unable to create user");
         return;
       }
-      setForm({ name: "", username: "", password: "", role: "user" });
-      setMessage(`Created ${data.user?.username ?? "user"}`);
-      const nextRes = await fetch("/api/auth/users", { credentials: "same-origin" });
-      const nextPayload = (await nextRes.json().catch(() => null)) as { ok?: boolean; users?: UserRecord[] } | null;
-      if (nextRes.ok && nextPayload?.ok) {
-        setUsers(nextPayload.users ?? []);
-      }
+      setForm({ name: "", email: "", password: "", role: "user" });
+      setMessage(`Invitation sent to ${data.user?.email ?? data.user?.username ?? "the user"}`);
+      await refreshUsers();
     } catch {
       setError("Unable to create user");
+    }
+  }
+
+  async function toggleUserStatus(entry: UserRecord) {
+    const nextStatus = entry.status === "active" || entry.enabled ? "disabled" : "active";
+    try {
+      const res = await fetch("/api/auth/users", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ action: "update", id: entry.id, status: nextStatus }),
+      });
+      const data = (await res.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
+      if (!res.ok || !data?.ok) {
+        setError(data?.error ?? "Unable to update user status");
+        return;
+      }
+      setMessage(`${entry.name} is now ${nextStatus === "active" ? "active" : "disabled"}.`);
+      await refreshUsers();
+    } catch {
+      setError("Unable to update user status");
+    }
+  }
+
+  async function deleteUser(entry: UserRecord) {
+    try {
+      const res = await fetch("/api/auth/users", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ action: "delete", id: entry.id }),
+      });
+      const data = (await res.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
+      if (!res.ok || !data?.ok) {
+        setError(data?.error ?? "Unable to delete user");
+        return;
+      }
+      setMessage(`${entry.name} was removed from active access.`);
+      await refreshUsers();
+    } catch {
+      setError("Unable to delete user");
     }
   }
 
@@ -113,20 +160,22 @@ function UsersPage() {
           </div>
 
           <div>
-            <label className="mb-1 block text-[0.7rem] uppercase tracking-[0.14em] text-muted-foreground">Username</label>
+            <label className="mb-1 block text-[0.7rem] uppercase tracking-[0.14em] text-muted-foreground">Gmail address</label>
             <input
-              value={form.username}
-              onChange={(event) => setForm((prev) => ({ ...prev, username: event.target.value }))}
+              type="email"
+              value={form.email}
+              onChange={(event) => setForm((prev) => ({ ...prev, email: event.target.value }))}
               className="w-full rounded-md border border-primary/40 bg-background/40 px-3 py-2 text-sm text-foreground outline-none focus:border-primary"
             />
           </div>
 
           <div>
-            <label className="mb-1 block text-[0.7rem] uppercase tracking-[0.14em] text-muted-foreground">Password</label>
+            <label className="mb-1 block text-[0.7rem] uppercase tracking-[0.14em] text-muted-foreground">Access password</label>
             <input
-              type="password"
+              type="text"
               value={form.password}
               onChange={(event) => setForm((prev) => ({ ...prev, password: event.target.value }))}
+              placeholder="Enter a shared access password"
               className="w-full rounded-md border border-primary/40 bg-background/40 px-3 py-2 text-sm text-foreground outline-none focus:border-primary"
             />
           </div>
@@ -144,7 +193,7 @@ function UsersPage() {
           </div>
 
           <button type="submit" className="w-full rounded-md bg-gradient-to-r from-emerald-400 via-cyan-400 to-primary px-4 py-2 font-medium text-slate-950 shadow-lg shadow-cyan-500/20 transition hover:brightness-110">
-            Create user
+            Send invitation
           </button>
 
           {message ? <p className="text-sm text-ok">{message}</p> : null}
@@ -157,17 +206,38 @@ function UsersPage() {
             {users.length === 0 ? (
               <p className="text-sm text-muted-foreground">No users found.</p>
             ) : (
-              users.map((entry) => (
-                <div key={entry.id} className="flex items-center justify-between rounded-md border border-panel-edge/70 bg-background/20 px-3 py-2">
-                  <div>
-                    <div className="font-medium text-foreground">{entry.name}</div>
-                    <div className="text-xs uppercase tracking-[0.12em] text-muted-foreground">{entry.username} · {entry.role}</div>
+              users.map((entry) => {
+                const isActive = entry.status === "active" || (entry.status == null && entry.enabled);
+                return (
+                  <div key={entry.id} className="rounded-md border border-panel-edge/70 bg-background/20 px-3 py-2">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="font-medium text-foreground">{entry.name}</div>
+                        <div className="text-xs uppercase tracking-[0.12em] text-muted-foreground">{entry.email ?? entry.username} · {entry.role}</div>
+                      </div>
+                      <span className="rounded-full border border-primary/40 px-2 py-1 text-[0.6rem] uppercase tracking-[0.12em] text-primary">
+                        {entry.status ?? (entry.enabled ? "ACTIVE" : "DISABLED")}
+                      </span>
+                    </div>
+                    <div className="mt-3 flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => toggleUserStatus(entry)}
+                        className="rounded border border-primary/40 px-2 py-1 text-[0.65rem] uppercase tracking-[0.12em] text-primary hover:bg-primary/10"
+                      >
+                        {isActive ? "Disable" : "Enable"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => deleteUser(entry)}
+                        className="rounded border border-red-500/50 px-2 py-1 text-[0.65rem] uppercase tracking-[0.12em] text-red-400 hover:bg-red-500/10"
+                      >
+                        Delete
+                      </button>
+                    </div>
                   </div>
-                  <span className="rounded-full border border-primary/40 px-2 py-1 text-[0.6rem] uppercase tracking-[0.12em] text-primary">
-                    {entry.enabled ? "ACTIVE" : "DISABLED"}
-                  </span>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         </div>

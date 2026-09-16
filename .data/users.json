@@ -5,9 +5,11 @@
     {
       "id": "u_dc4c2ebdd3b15aad",
       "username": "admin",
+      "email": "admin@sierrraedge.local",
       "name": "Command Administrator",
       "role": "admin",
       "enabled": true,
+      "status": "active",
       "createdAt": 1789457206117,
       "seed": true,
       "salt": "a59d9fa6c01332bf202e512d55ca76ee",

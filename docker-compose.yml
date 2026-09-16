@@ -3,3 +3,12 @@ services:
     build: .
     ports:
       - "7092:3000"
+    env_file:
+      - .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - app_data:/app/.data
+
+volumes:
+  app_data:
