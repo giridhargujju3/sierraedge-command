@@ -40,10 +40,10 @@ function AcceptInvitePage() {
       }
 
       setStatus("success");
-      setMessage("Invitation accepted — redirecting to the workspace.");
+      setMessage("Invitation activated — redirecting to the sign-in page.");
       setTimeout(() => {
-        void navigate({ to: "/", replace: true });
-      }, 1000);
+        void navigate({ to: "/login", replace: true });
+      }, 1200);
     } catch {
       setStatus("error");
       setMessage("Unable to accept invitation.");
@@ -60,11 +60,12 @@ function AcceptInvitePage() {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <p className="text-sm text-muted-foreground">
-            You are signing in with a trusted Gmail address. There is no shared password to set up.
+            Activate your access below. You will then sign in on the login page with your Gmail
+            address and the access password from the invitation email.
           </p>
 
           <Button type="submit" className="w-full" disabled={status === "loading" || status === "success"}>
-            {status === "loading" ? "VERIFIING ACCESS..." : "Continue to workspace"}
+            {status === "loading" ? "ACTIVATING ACCESS..." : "Activate & continue to sign in"}
           </Button>
 
           {message ? (

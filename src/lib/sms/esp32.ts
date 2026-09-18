@@ -260,6 +260,23 @@ export function esp32DataEndpoint(input: string): string {
   return `${normalizeEsp32Host(input)}/data`;
 }
 
+/**
+ * Effective request URL used by the browser.
+ *
+ * A page served over https cannot fetch `http://<ip>/data` — browsers block
+ * mixed content. On https we therefore route through this app's own
+ * `/api/device/data` proxy: the server sits on the same LAN as the rig and can
+ * reach it. On plain http we keep the direct, zero-hop LAN path.
+ */
+export function esp32RequestUrl(input: string): string {
+  const base = normalizeEsp32Host(input);
+  const onHttps = typeof window !== "undefined" && window.location.protocol === "https:";
+  if (onHttps) {
+    return `/api/device/data?ip=${encodeURIComponent(base)}`;
+  }
+  return `${base}/data`;
+}
+
 export function isValidEsp32Host(input: string): boolean {
   const base = normalizeEsp32Host(input);
   if (!base) return false;

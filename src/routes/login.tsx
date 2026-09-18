@@ -97,6 +97,7 @@ function LoginVoiceHeaderControls() {
           <option value="en">English</option>
           <option value="hi">Hindi</option>
           <option value="te">Telugu</option>
+          <option value="kn">Kannada</option>
         </select>
       </label>
 

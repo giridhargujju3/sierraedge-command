@@ -10,5 +10,20 @@ services:
     volumes:
       - app_data:/app/.data
 
+  # HTTPS reverse proxy for sms.com (binds port 443 only; port 80 is untouched)
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - app
+    ports:
+      - "443:443"
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+
 volumes:
   app_data:
+  caddy_data:
+  caddy_config:

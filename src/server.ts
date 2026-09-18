@@ -9,6 +9,7 @@ import { Client } from "pg";
 import { consumeLastCapturedError } from "./lib/error-capture";
 import { renderErrorPage } from "./lib/error-page";
 import { createInviteUrl, getInviteDeliveryMessage, isValidEmail, normalizeEmail } from "./lib/invite";
+import { normalizeEsp32Host } from "./lib/sms/esp32";
 
 type ServerEntry = {
   fetch: (request: Request, env: unknown, ctx: unknown) => Promise<Response> | Response;
@@ -268,9 +269,9 @@ async function sendInviteEmail(
         <div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;padding:24px;border:1px solid #d9d9d9;border-radius:12px;">
           <h2 style="margin:0 0 12px;color:#0f172a;">Welcome to SierraEdge</h2>
           <p style="margin:0 0 12px;color:#334155;">Hello ${name || "Operator"},</p>
-          <p style="margin:0 0 16px;color:#334155;">You have been invited to access the SierraEdge Smart Mannequin System. Please accept the invitation below to continue.</p>
+          <p style="margin:0 0 16px;color:#334155;">You have been invited to access the SierraEdge Smart Mannequin System. Please activate your access below, then sign in on the login page using your Gmail address and the access password shown here.</p>
           ${accessPasswordHtml}
-          <p style="margin:0 0 20px;"><a href="${inviteUrl}" style="display:inline-block;padding:12px 20px;background:#0ea5e9;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold;">Continue to SierraEdge</a></p>
+          <p style="margin:0 0 20px;"><a href="${inviteUrl}" style="display:inline-block;padding:12px 20px;background:#0ea5e9;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold;">Activate your access</a></p>
           <p style="margin:0;color:#475569;">If the button does not work, use this link: <a href="${inviteUrl}">${inviteUrl}</a></p>
         </div>
       `,
@@ -308,6 +309,93 @@ function isSecureRequest(request: Request) {
   const forwardedProto = request.headers.get("x-forwarded-proto") ?? "";
   const urlProtocol = new URL(request.url).protocol;
   return forwardedProto === "https" || urlProtocol === "https:";
+}
+
+function getAppOrigin(request: Request) {
+  const configured = process.env.APP_BASE_URL?.trim();
+  if (configured) {
+    return new URL(configured).origin;
+  }
+  return new URL(request.url).origin;
+}
+
+// Private / link-local address check — keeps the device proxy from being abused
+// as an SSRF gateway to arbitrary hosts on the internet.
+function isPrivateDeviceHost(hostname: string) {
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  if (!host) return false;
+  if (host === "localhost") return true;
+
+  const ipv4 = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (ipv4) {
+    const a = Number(ipv4[1]);
+    const b = Number(ipv4[2]);
+    if (a === 10 || a === 127) return true;
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    if (a === 192 && b === 168) return true;
+    if (a === 169 && b === 254) return true;
+    return false;
+  }
+
+  // mDNS names and bare LAN hostnames (e.g. "esp32.local", "mannequin").
+  if (host.endsWith(".local")) return true;
+  if (!host.includes(".")) return true;
+  return false;
+}
+
+/**
+ * Device proxy: the browser (on the https dashboard) asks this same-origin
+ * endpoint, and the server — which sits on the rig's LAN — fetches
+ * `GET http://<esp32-ip>/data` and relays the JSON. This sidesteps the browser's
+ * mixed-content block while preserving the proven polling contract.
+ */
+async function handleDeviceApi(request: Request) {
+  const url = new URL(request.url);
+  if (url.pathname !== "/api/device/data") return null;
+
+  if (request.method !== "GET") {
+    return jsonResponse({ ok: false, error: "Method not allowed" }, { status: 405 });
+  }
+
+  const currentUser = await getSessionUser(request);
+  if (!currentUser) {
+    return jsonResponse({ ok: false, error: "Unauthorized" }, { status: 401 });
+  }
+
+  let target: URL;
+  try {
+    target = new URL(normalizeEsp32Host(url.searchParams.get("ip") ?? ""));
+  } catch {
+    return jsonResponse({ ok: false, error: "Invalid device address" }, { status: 400 });
+  }
+
+  if (target.protocol !== "http:") {
+    return jsonResponse({ ok: false, error: "Device address must use http" }, { status: 400 });
+  }
+  if (!isPrivateDeviceHost(target.hostname)) {
+    return jsonResponse({ ok: false, error: "Device address must be on the local network" }, { status: 400 });
+  }
+
+  target.pathname = "/data";
+  target.search = "";
+
+  try {
+    const deviceResponse = await fetch(target.toString(), {
+      cache: "no-store",
+      signal: AbortSignal.timeout(4000),
+    });
+    const body = await deviceResponse.text();
+    return new Response(body, {
+      status: deviceResponse.status,
+      headers: {
+        "content-type": deviceResponse.headers.get("content-type") ?? "application/json; charset=utf-8",
+        "cache-control": "no-store",
+      },
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Device unreachable";
+    return jsonResponse({ ok: false, error: message }, { status: 504 });
+  }
 }
 
 function appendSetCookieHeader(response: Response, name: string, value: string, options: Record<string, string | number | boolean>) {
@@ -429,7 +517,7 @@ async function handleAuthApi(request: Request) {
 
     await writeUsersStore(store);
 
-    const inviteUrl = createInviteUrl(new URL(request.url).origin, inviteToken);
+    const inviteUrl = createInviteUrl(getAppOrigin(request), inviteToken);
     const emailRes = await sendInviteEmail(
       email,
       target.name || "Operator",
@@ -493,18 +581,10 @@ async function handleAuthApi(request: Request) {
 
     await writeUsersStore(store);
 
-    const payload = { uid: target.id, iat: Date.now() };
-    const payloadStr = JSON.stringify(payload);
-    const payloadPart = base64UrlEncode(payloadStr);
-    const sig = createHmac("sha256", store.secret ?? "").update(payloadPart).digest("hex");
-    const sessionToken = `${payloadPart}.${sig}`;
-
-    const response = jsonResponse({ ok: true, user: stripUser(target) });
-    appendSetCookieHeader(response, "se_session", sessionToken, {
-      maxAge: 60 * 60 * 24 * 30,
-      secure: isSecureRequest(request),
-    });
-    return response;
+    // Activate the account but do NOT create a session here. Invitees are sent
+    // to the login screen and must authenticate with their email and the access
+    // password from the invitation email.
+    return jsonResponse({ ok: true, user: stripUser(target), requiresLogin: true });
   }
 
   if (action === "me") {
@@ -629,8 +709,11 @@ async function handleAuthApi(request: Request) {
       const role = body.role === "admin" ? "admin" : "user";
       const password = String(body.password ?? "").trim();
 
-      if (!email || !name) {
-        return jsonResponse({ ok: false, error: "Name and a valid Gmail address are required" }, { status: 400 });
+      if (!email || !name || !password) {
+        return jsonResponse(
+          { ok: false, error: "Name, a valid Gmail address and an access password are required" },
+          { status: 400 },
+        );
       }
 
       if (!isValidEmail(email)) {
@@ -670,7 +753,7 @@ async function handleAuthApi(request: Request) {
       store.users = [...(store.users ?? []), inviteUser];
       await writeUsersStore(store);
 
-      const inviteUrl = `${new URL(request.url).origin}/accept-invite?token=${encodeURIComponent(inviteToken)}`;
+      const inviteUrl = `${getAppOrigin(request)}/accept-invite?token=${encodeURIComponent(inviteToken)}`;
       const emailRes = await sendInviteEmail(email, name, inviteUrl, "SierraEdge invitation — accept access", password || undefined);
 
       if (!emailRes.ok || !emailRes.delivered) {
@@ -739,8 +822,22 @@ async function handleAuthApi(request: Request) {
         return jsonResponse({ ok: false, error: "User not found" }, { status: 404 });
       }
 
-      targetUser.enabled = false;
-      targetUser.status = "deleted";
+      if (targetUser.id === currentUser.id) {
+        return jsonResponse({ ok: false, error: "You cannot delete your own account." }, { status: 400 });
+      }
+
+      const remainingAdmins = (store.users ?? []).filter(
+        (user) =>
+          user.id !== targetUser.id &&
+          user.role === "admin" &&
+          user.status !== "deleted" &&
+          user.enabled !== false,
+      );
+      if (targetUser.role === "admin" && remainingAdmins.length === 0) {
+        return jsonResponse({ ok: false, error: "At least one admin must remain." }, { status: 400 });
+      }
+
+      store.users = (store.users ?? []).filter((user) => user.id !== targetUser.id);
       await writeUsersStore(store);
       return jsonResponse({ ok: true, user: stripUser(targetUser) });
     }
@@ -791,6 +888,11 @@ function isH3SwallowedErrorBody(body: string): boolean {
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
     try {
+      const deviceResponse = await handleDeviceApi(request);
+      if (deviceResponse) {
+        return deviceResponse;
+      }
+
       const authResponse = await handleAuthApi(request);
       if (authResponse) {
         return authResponse;

@@ -128,7 +128,7 @@ function UsersPage() {
         setError(data?.error ?? "Unable to delete user");
         return;
       }
-      setMessage(`${entry.name} was removed from active access.`);
+      setMessage(`${entry.name} was deleted.`);
       await refreshUsers();
     } catch {
       setError("Unable to delete user");
@@ -173,9 +173,10 @@ function UsersPage() {
             <label className="mb-1 block text-[0.7rem] uppercase tracking-[0.14em] text-muted-foreground">Access password</label>
             <input
               type="text"
+              required
               value={form.password}
               onChange={(event) => setForm((prev) => ({ ...prev, password: event.target.value }))}
-              placeholder="Enter a shared access password"
+              placeholder="Required — shared login password"
               className="w-full rounded-md border border-primary/40 bg-background/40 px-3 py-2 text-sm text-foreground outline-none focus:border-primary"
             />
           </div>
@@ -230,7 +231,8 @@ function UsersPage() {
                       <button
                         type="button"
                         onClick={() => deleteUser(entry)}
-                        className="rounded border border-red-500/50 px-2 py-1 text-[0.65rem] uppercase tracking-[0.12em] text-red-400 hover:bg-red-500/10"
+                        disabled={entry.id === user.id}
+                        className="rounded border border-red-500/50 px-2 py-1 text-[0.65rem] uppercase tracking-[0.12em] text-red-400 hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
                       >
                         Delete
                       </button>

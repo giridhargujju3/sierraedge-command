@@ -17,7 +17,7 @@ import {
   channelAlertCandidates,
   channelStatus,
   deriveRigVitals,
-  esp32DataEndpoint,
+  esp32RequestUrl,
   extractChannelValues,
   formatChannelDisplay,
   rigEquipment,
@@ -80,7 +80,7 @@ export function createEsp32TelemetrySource(opts: {
   config: MannequinConfig;
   pollMs?: number;
 }): Esp32TelemetrySource {
-  const endpoint = esp32DataEndpoint(opts.ip);
+  const endpoint = esp32RequestUrl(opts.ip);
   const pollMs = Math.min(60_000, Math.max(1_000, Math.round(opts.pollMs ?? 2_000)));
   const staleAfterMs = Math.max(3 * pollMs, 10_000);
   const startedAt = Date.now();

@@ -1,4 +1,4 @@
-export type GreetingLanguage = "en" | "hi" | "te";
+export type GreetingLanguage = "en" | "hi" | "te" | "kn";
 export type VoiceGender = "female" | "male";
 
 export interface VoicePreferences {
@@ -27,7 +27,14 @@ export function getVoicePreferences(): VoicePreferences {
 
     const parsed = JSON.parse(raw) as Partial<VoicePreferences>;
     return {
-      language: parsed.language === "hi" ? "hi" : parsed.language === "te" ? "te" : "en",
+      language:
+        parsed.language === "hi"
+          ? "hi"
+          : parsed.language === "te"
+            ? "te"
+            : parsed.language === "kn"
+              ? "kn"
+              : "en",
       voiceGender: parsed.voiceGender === "male" ? "male" : "female",
       autoPlay: parsed.autoPlay !== false,
       muted: !!parsed.muted,
@@ -81,7 +88,14 @@ export function consumePendingGreeting():
     window.localStorage.removeItem(PENDING_GREETING_KEY);
     return {
       name: parsed.name,
-      language: parsed.language === "hi" ? "hi" : parsed.language === "te" ? "te" : "en",
+      language:
+        parsed.language === "hi"
+          ? "hi"
+          : parsed.language === "te"
+            ? "te"
+            : parsed.language === "kn"
+              ? "kn"
+              : "en",
       gender: parsed.gender === "male" ? "male" : "female",
     };
   } catch {
@@ -93,6 +107,7 @@ export function consumePendingGreeting():
 export function getLanguageLabel(language: GreetingLanguage) {
   if (language === "hi") return "Hindi";
   if (language === "te") return "Telugu";
+  if (language === "kn") return "Kannada";
   return "English";
 }
 
@@ -103,7 +118,13 @@ export function getGenderLabel(gender: VoiceGender) {
 export function getGreetingText(name: string, language: GreetingLanguage) {
   const safeName =
     name?.trim() ||
-    (language === "hi" ? "ऑपरेटर" : language === "te" ? "ఆపరేటర్" : "Operator");
+    (language === "hi"
+      ? "ऑपरेटर"
+      : language === "te"
+        ? "ఆపరేటర్"
+        : language === "kn"
+          ? "ಆಪರೇಟರ್"
+          : "Operator");
 
   if (language === "hi") {
     return `नमस्ते ${safeName}, स्मार्ट मैनेक्विन सिस्टम में आपका स्वागत है।`;
@@ -111,6 +132,10 @@ export function getGreetingText(name: string, language: GreetingLanguage) {
 
   if (language === "te") {
     return `హలో ${safeName}, స్మార్ట్ మానెక్విన్ సిస్టమ్‌కు స్వాగతం.`;
+  }
+
+  if (language === "kn") {
+    return `ನಮಸ್ಕಾರ ${safeName}, ಸ್ಮಾರ್ಟ್ ಮ್ಯಾನೆಕ್ವಿನ್ ಸಿಸ್ಟಮ್‌ಗೆ ಸ್ವಾಗತ.`;
   }
 
   return `Welcome ${safeName}, to the Smart Mannequin System.`;
@@ -121,7 +146,8 @@ export function pickVoice(
   language: GreetingLanguage,
   gender: VoiceGender,
 ): SpeechSynthesisVoice | undefined {
-  const langPrefix = language === "hi" ? "hi" : language === "te" ? "te" : "en";
+  const langPrefix =
+    language === "hi" ? "hi" : language === "te" ? "te" : language === "kn" ? "kn" : "en";
   const matches = voices.filter((voice) => {
     const name = voice.name.toLowerCase();
     const lang = voice.lang.toLowerCase();
@@ -134,6 +160,10 @@ export function pickVoice(
 
     if (language === "hi") {
       return name.includes("hindi");
+    }
+
+    if (language === "kn") {
+      return name.includes("kannada");
     }
 
     return name.includes("english");
@@ -160,6 +190,7 @@ export function pickVoice(
           "ramya",
           "swara",
           "telugu",
+          "kannada",
         ]
       : [
           "male",
@@ -175,6 +206,7 @@ export function pickVoice(
           "sundar",
           "srikanth",
           "telugu",
+          "kannada",
         ];
 
   const matchByGender = matches.find((voice) =>
@@ -204,7 +236,8 @@ export function speakGreeting(
     const voices = synthesis.getVoices();
     const voice = pickVoice(voices, language, gender);
     const utterance = new SpeechSynthesisUtterance(getGreetingText(name, language));
-    const targetLang = language === "hi" ? "hi-IN" : language === "te" ? "te-IN" : "en-US";
+    const targetLang =
+      language === "hi" ? "hi-IN" : language === "te" ? "te-IN" : language === "kn" ? "kn-IN" : "en-US";
 
     utterance.lang = targetLang;
     utterance.rate = 0.98;
@@ -212,7 +245,12 @@ export function speakGreeting(
     utterance.onend = () => onEnd?.();
     utterance.onerror = () => onEnd?.();
 
-    if (voice && voice.lang.toLowerCase().startsWith(language === "hi" ? "hi" : language === "te" ? "te" : "en")) {
+    if (
+      voice &&
+      voice.lang
+        .toLowerCase()
+        .startsWith(language === "hi" ? "hi" : language === "te" ? "te" : language === "kn" ? "kn" : "en")
+    ) {
       utterance.voice = voice;
       utterance.lang = voice.lang;
     } else {

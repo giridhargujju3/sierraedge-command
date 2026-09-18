@@ -4,7 +4,7 @@ import { HudPanel, KeyValue } from "./HudPanel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import { ESP32_DATA_CONTRACT_EXAMPLE, esp32DataEndpoint, isValidEsp32Host } from "@/lib/sms/esp32";
+import { ESP32_DATA_CONTRACT_EXAMPLE, esp32DataEndpoint, esp32RequestUrl, isValidEsp32Host } from "@/lib/sms/esp32";
 import { useEsp32Link } from "@/lib/sms/TelemetryProvider";
 import { cn } from "@/lib/utils";
 
@@ -42,7 +42,7 @@ export function Esp32ConfigPanel() {
     // Saving the IP is all it takes — engage live telemetry immediately.
     if (!link.liveMode) link.setLiveMode(true);
     setSavedFlash(true);
-    setResult({ ok: true, msg: `Saved — polling ${esp32DataEndpoint(target)}` });
+    setResult({ ok: true, msg: `Saved — polling ${esp32RequestUrl(target)}` });
     window.setTimeout(() => setSavedFlash(false), 2500);
   };
 
@@ -56,7 +56,7 @@ export function Esp32ConfigPanel() {
     setResult(null);
     const started = performance.now();
     try {
-      const res = await fetch(esp32DataEndpoint(t), {
+      const res = await fetch(esp32RequestUrl(t), {
         cache: "no-store",
         signal: AbortSignal.timeout(4000),
       });
@@ -72,7 +72,7 @@ export function Esp32ConfigPanel() {
       const reason = err instanceof Error ? err.message : "failed";
       setResult({
         ok: false,
-        msg: `No response (${reason}). Check the IP, make sure this PC and the ESP32 share the same WiFi, and open this dashboard over http://`,
+        msg: `No response (${reason}). Check the IP and make sure the ESP32 is powered on and reachable from the network this server runs on.`,
       });
     } finally {
       setTesting(false);
