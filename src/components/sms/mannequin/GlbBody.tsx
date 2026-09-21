@@ -3,11 +3,12 @@ import { useGLTF } from "@react-three/drei";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import type { BodyZone, BodyZoneId } from "@/lib/sms/types";
+import mannequinAsset from "@/assets/sierraedge-mannequin.glb.asset.json";
 
-const BODY_COLOR = "#b0bec5";
+const BODY_COLOR = "#d7e2e5";
 const HIGHLIGHT_COLOR = "#4fd8ff";
 const TARGET_HEIGHT = 1.75;
-const GLB_URL = "/sierraedge-mannequin.glb";
+const GLB_URL = mannequinAsset.url;
 
 export function GlbBody({
   zones,
@@ -40,8 +41,8 @@ export function GlbBody({
   const bodyMaterial = useMemo(() => {
     const mat = new THREE.MeshStandardMaterial({
       color: BODY_COLOR,
-      roughness: 0.6,
-      metalness: 0.1,
+      roughness: 0.72,
+      metalness: 0.02,
     });
     return mat;
   }, []);
