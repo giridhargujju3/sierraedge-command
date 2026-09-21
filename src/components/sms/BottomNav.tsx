@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { BarChart3, FileText, Gauge, History, LayoutDashboard, Settings } from "lucide-react";
+import { BarChart3, Box, FileText, Gauge, History, LayoutDashboard, Settings } from "lucide-react";
 
 const ITEMS = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -7,6 +7,7 @@ const ITEMS = [
   { to: "/sensor-analytics", label: "Sensor Analytics", icon: BarChart3 },
   { to: "/history", label: "History", icon: History },
   { to: "/reports", label: "Reports", icon: FileText },
+  { to: "/3d-styles", label: "3D Styles", icon: Box },
   { to: "/settings", label: "Settings", icon: Settings },
 ] as const;
 

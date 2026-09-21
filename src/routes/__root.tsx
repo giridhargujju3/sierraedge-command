@@ -12,6 +12,7 @@ import { useEffect, type ReactNode } from "react";
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { TelemetryProvider } from "../lib/sms/TelemetryProvider";
+import { MannequinStyleProvider } from "../lib/sms/style";
 import { TopBar } from "../components/sms/TopBar";
 import { BottomNav } from "../components/sms/BottomNav";
 
@@ -136,14 +137,16 @@ function RootComponent() {
   return (
     <QueryClientProvider client={queryClient}>
       <TelemetryProvider>
-        <div className="flex h-screen flex-col overflow-hidden">
-          <TopBar />
-          <main className="min-h-0 flex-1 overflow-y-auto px-2 py-2 scroll-thin xl:overflow-hidden">
-            {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-            <Outlet />
-          </main>
-          <BottomNav />
-        </div>
+        <MannequinStyleProvider>
+          <div className="flex h-screen flex-col overflow-hidden">
+            <TopBar />
+            <main className="min-h-0 flex-1 overflow-y-auto px-2 py-2 scroll-thin xl:overflow-hidden">
+              {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
+              <Outlet />
+            </main>
+            <BottomNav />
+          </div>
+        </MannequinStyleProvider>
       </TelemetryProvider>
 
     </QueryClientProvider>
